@@ -1,0 +1,71 @@
+model:
+  name: Qwen/Qwen3.6-27B
+  base_url: null
+  api_key_env: API_KEY
+  context_window: 262144
+
+agent:
+  workdir: .
+  trajectory: runs/latest.json
+  compact_at: 0.90
+  max_output_tokens: 4096
+  max_tool_output_tokens: 8192
+  max_steps: 80
+  wall_time_s: 3600
+
+sandbox:
+  tasks_dir: infra/tasks
+  host: 127.0.0.1
+  port: 8001
+  token_env: AGENT_ENV_TOKEN
+  public_url: http://127.0.0.1:8001
+  max_envs: 2
+  max_steps: 80
+  max_image_bytes: 20971520
+  max_output_tokens: 8192
+
+sft:
+  model: Qwen/Qwen3.6-27B
+  data: data/sft.jsonl
+  output: outputs/sft
+  learning_rate: 0.0002
+  epochs: 1
+  max_steps: -1
+  gradient_accumulation_steps: 8
+
+rl:
+  model: outputs/sft/final
+  data: data/rl.jsonl
+  output: outputs/rl
+  learning_rate: 0.000005
+  max_steps: -1
+  gradient_accumulation_steps: 8
+  vllm_url: http://127.0.0.1:8000
+  num_generations: 4
+  max_completion_length: 32768
+  temperature: 0.6
+  top_p: 0.95
+  top_k: 20
+  epsilon_low: 0.20
+  epsilon_high: 0.28
+  beta: 0.0
+
+vllm:
+  model: outputs/sft/final
+  host: 127.0.0.1
+  port: 8000
+  max_model_len: 32768
+  gpu_memory_utilization: 0.90
+
+merge:
+  base_model: Qwen/Qwen3.6-27B
+  adapter: outputs/rl/final
+  output: outputs/merged-bf16
+
+quantize:
+  model: outputs/merged-bf16
+  data: data/calibration.jsonl
+  output: outputs/agent-nvfp4
+  samples: 32
+  max_seq_length: 2048
+

@@ -1,0 +1,34 @@
+from __future__ import annotations
+
+import argparse
+import os
+import subprocess
+
+from agent_ground_up.config import load_config, section
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", default=os.getenv("AGENT_CONFIG", "config.yaml"))
+    args = parser.parse_args()
+    values = section(load_config(args.config), "vllm")
+    command = [
+        "trl",
+        "vllm-serve",
+        "--model",
+        values["model"],
+        "--host",
+        values["host"],
+        "--port",
+        str(values["port"]),
+        "--max-model-len",
+        str(values["max_model_len"]),
+        "--gpu-memory-utilization",
+        str(values["gpu_memory_utilization"]),
+        "--disable-uvicorn-access-log",
+    ]
+    raise SystemExit(subprocess.call(command))
+
+
+if __name__ == "__main__":
+    main()

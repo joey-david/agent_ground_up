@@ -1,0 +1,240 @@
+from __future__ import annotations
+
+import copy
+import json
+import time
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any
+
+from .tools import TOOL_SCHEMAS, ImageResult, Toolbox
+
+SYSTEM_PROMPT = """You are a coding agent working in the provided workspace. Work until the task is complete.
+Use bash to inspect, edit, and test the repository; each call starts in the repository root. Use view_image
+for image files. Prefer minimal changes that fit the existing code. Treat tool failures as observations and
+recover. Before finishing, run the narrowest relevant validation. Return final text only when the work is
+genuinely complete."""
+
+COMPACT_PROMPT = """Produce a faithful continuation checkpoint under 1,500 tokens. Preserve the original
+goal, current state, decisions and constraints, files changed or inspected, commands and results, failures,
+unresolved work, next actions, and critical literal data. Do not continue solving the task."""
+
+
+@dataclass(slots=True)
+class RunResult:
+    status: str
+    answer: str
+    steps: int
+    prompt_tokens: int
+    compactions: int
+    valid_tool_calls: int
+    invalid_tool_calls: int
+    elapsed_s: float
+
+
+class Agent:
+    def __init__(
+        self,
+        client: Any,
+        model: str,
+        tools: Toolbox,
+        processor: Any,
+        *,
+        context_window: int = 262_144,
+        compact_at: float = 0.90,
+        max_output_tokens: int = 4096,
+        max_steps: int = 80,
+        wall_time_s: int = 3600,
+        trajectory_path: str | Path | None = None,
+    ) -> None:
+        if not 0 < compact_at < 1:
+            raise ValueError("compact_at must be between zero and one")
+        self.client = client
+        self.model = model
+        self.tools = tools
+        self.processor = processor
+        self.context_window = context_window
+        self.compact_at = compact_at
+        self.max_output_tokens = max_output_tokens
+        self.max_steps = max_steps
+        self.wall_time_s = wall_time_s
+        self.trajectory_path = Path(trajectory_path) if trajectory_path else None
+        self.messages: list[dict[str, Any]] = []
+        self.original_task = ""
+        self.compactions = 0
+        self.valid_tool_calls = 0
+        self.invalid_tool_calls = 0
+        self.last_prompt_tokens = 0
+
+    def run(self, task: str) -> RunResult:
+        started = time.monotonic()
+        self.original_task = task
+        self.messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": task}]
+        self.compactions = self.valid_tool_calls = self.invalid_tool_calls = 0
+
+        answer = ""
+        status = "step_limit"
+        steps = 0
+        for steps in range(1, self.max_steps + 1):
+            if time.monotonic() - started >= self.wall_time_s:
+                status = "wall_time_limit"
+                break
+            self._maybe_compact()
+            message = self._complete(self.messages, tools=TOOL_SCHEMAS)
+            self.messages.append(message)
+            calls = message.get("tool_calls") or []
+            if not calls:
+                answer = message.get("content") or ""
+                status = "completed"
+                self._save(status, answer, steps, started)
+                break
+            for call in calls:
+                self.messages.append(self._execute(call))
+            self._save("running", "", steps, started)
+        else:
+            steps = self.max_steps
+
+        result = RunResult(
+            status=status,
+            answer=answer,
+            steps=steps,
+            prompt_tokens=self.last_prompt_tokens,
+            compactions=self.compactions,
+            valid_tool_calls=self.valid_tool_calls,
+            invalid_tool_calls=self.invalid_tool_calls,
+            elapsed_s=time.monotonic() - started,
+        )
+        self._write_trajectory(result)
+        return result
+
+    def _complete(self, messages: list[dict[str, Any]], *, tools: list[dict[str, Any]] | None) -> dict[str, Any]:
+        prompt_tokens = self._prompt_tokens(messages, tools)
+        self.last_prompt_tokens = prompt_tokens
+        available = self.context_window - prompt_tokens
+        if available <= 0:
+            raise RuntimeError("Prompt exceeds the configured context window")
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "max_tokens": min(self.max_output_tokens, available),
+        }
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = "auto"
+        response = self.client.chat.completions.create(**kwargs)
+        raw = response.choices[0].message
+        if hasattr(raw, "model_dump"):
+            data = raw.model_dump(exclude_none=True)
+        elif isinstance(raw, dict):
+            data = copy.deepcopy(raw)
+        else:
+            data = {"role": "assistant", "content": getattr(raw, "content", None)}
+        data["role"] = "assistant"
+        return data
+
+    def _execute(self, call: dict[str, Any]) -> dict[str, Any]:
+        call_id = call.get("id", "missing-call-id")
+        function = call.get("function") or {}
+        name = function.get("name")
+        try:
+            arguments = json.loads(function.get("arguments") or "{}")
+            if not isinstance(arguments, dict):
+                raise ValueError("tool arguments must be a JSON object")
+            if name == "bash":
+                result = self.tools.bash(**arguments)
+                content: str | list[dict[str, Any]] = result.as_text()
+            elif name == "view_image":
+                image = self.tools.view_image(**arguments)
+                content = image.content()
+            else:
+                raise ValueError(f"unknown tool: {name}")
+            self.valid_tool_calls += 1
+        except (TypeError, ValueError, OSError, json.JSONDecodeError) as error:
+            self.invalid_tool_calls += 1
+            content = f"Tool error: {type(error).__name__}: {error}"
+        return {"role": "tool", "tool_call_id": call_id, "name": name or "unknown", "content": content}
+
+    def _maybe_compact(self) -> None:
+        tokens = self._prompt_tokens(self.messages, TOOL_SCHEMAS)
+        self.last_prompt_tokens = tokens
+        if tokens / self.context_window < self.compact_at:
+            return
+
+        safe_history = self._safe(self.messages)
+        compact_messages = [
+            {"role": "system", "content": COMPACT_PROMPT},
+            {"role": "user", "content": json.dumps(safe_history, ensure_ascii=False)},
+        ]
+        checkpoint = self._complete(compact_messages, tools=None).get("content") or ""
+        self.messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": self.original_task},
+            {"role": "user", "content": f"Context checkpoint:\n{checkpoint}"},
+        ]
+        self.compactions += 1
+        if self._prompt_tokens(self.messages, TOOL_SCHEMAS) / self.context_window >= self.compact_at:
+            raise RuntimeError("Compacted checkpoint still exceeds the 90% context threshold")
+
+    def _prompt_tokens(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None) -> int:
+        if hasattr(self.processor, "count_tokens"):
+            return int(self.processor.count_tokens(messages, tools))
+        try:
+            encoded = self.processor.apply_chat_template(
+                messages,
+                tools=tools,
+                add_generation_prompt=True,
+                tokenize=True,
+                return_dict=True,
+                return_tensors=None,
+            )
+            input_ids = encoded["input_ids"] if isinstance(encoded, dict) else encoded
+            if input_ids and isinstance(input_ids[0], list):
+                input_ids = input_ids[0]
+            return len(input_ids)
+        except Exception as error:
+            raise RuntimeError(
+                "Exact prompt token accounting failed; load the processor for the served model revision"
+            ) from error
+
+    def _save(self, status: str, answer: str, steps: int, started: float) -> None:
+        result = RunResult(
+            status,
+            answer,
+            steps,
+            self.last_prompt_tokens,
+            self.compactions,
+            self.valid_tool_calls,
+            self.invalid_tool_calls,
+            time.monotonic() - started,
+        )
+        self._write_trajectory(result)
+
+    def _write_trajectory(self, result: RunResult) -> None:
+        if not self.trajectory_path:
+            return
+        self.trajectory_path.parent.mkdir(parents=True, exist_ok=True)
+        record = {
+            "model": self.model,
+            "task": self.original_task,
+            "result": asdict(result),
+            "messages": self._safe(self.messages),
+        }
+        self.trajectory_path.write_text(json.dumps(record, indent=2, ensure_ascii=False))
+
+    @classmethod
+    def _safe(cls, value: Any) -> Any:
+        if isinstance(value, ImageResult):
+            return value.safe_dict()
+        if isinstance(value, dict):
+            if value.get("type") == "image_url":
+                url = (value.get("image_url") or {}).get("url", "")
+                return {
+                    "type": "text",
+                    "text": "[embedded image removed from trajectory]" if url.startswith("data:") else url,
+                }
+            return {
+                key: cls._safe(item) for key, item in value.items() if key.lower() not in {"api_key", "authorization"}
+            }
+        if isinstance(value, list):
+            return [cls._safe(item) for item in value]
+        return value

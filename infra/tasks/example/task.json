@@ -1,0 +1,10 @@
+{
+  "image": "python:3.12-slim",
+  "observation": "Create /workspace/answer.txt containing exactly: agent ready",
+  "verifier": "test \"$(cat answer.txt)\" = \"agent ready\"",
+  "verifier_timeout_s": 30,
+  "cpus": 1,
+  "memory": "1g",
+  "pids": 64
+}
+
