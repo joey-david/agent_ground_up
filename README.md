@@ -1,34 +1,39 @@
 # Agent Ground Up
 
-Two videos build one small multimodal coding agent:
+Building an agentic harness and training the associated LLM. Mostly inspired from [mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent) and [codex](https://github.com/openai/codex).
 
-1. Type the runtime and run Qwen3.6-27B through a hosted OpenAI-compatible endpoint.
-2. Type its QLoRA SFT pipeline, remote environment, and DAPO loss; train and serve GPTQ W4A16 on 2×A100 80 GB.
+**Key features**:
 
-The model sees only `bash` and `view_image`. Compaction is automatic at 90%. `config.yaml` is the interface for every stage; secrets remain environment variables.
+- [x] Minimal agentic scaffold for multimodal LLMs with tools for bash and image inspection (web interaction can be achieved via bash + a web browsing skill). Automatic compaction at 90%.
+- [x] Custom inference and training code via a detached 2xA100 80 GB vLLM server. QLoRA RL pipeline via a remote environment and SOTA DAPO loss.
+- [x] Highly customizable and adaptable via a general-purpose `config.yaml`.
+- [x] TUI interface with capped Markdown, shell, and diff output. No web server or browser required.
 
-## Shape
+### Repository structure
 
 ```text
-run.py / train.py
-        |
 agent_ground_up/
-  agent.py       model loop, compaction, trajectories
-  tools.py       bash and image viewer
-  ui.py          capped Markdown, shell, and diff output
-  loss.py        hand-written Torch DAPO objective
-  remote_env.py  TRL -> authenticated Mac sandbox
-  config.py      YAML loading
-
-infra/
-  sandbox_server.py   disposable Docker environments
-  start_sandbox.py
-  start_vllm.py
+├── config.yaml             # customize to your own needs
+├── run.py                  # hosted/local agent entry point
+├── train.py                # SFT, RL, merge, and quantization stages
+├── agent_ground_up/
+│   ├── agent.py            # model loop and context compaction
+│   ├── tools.py            # bash and image viewer
+│   ├── ui.py               # capped Markdown, shell, and diff output
+│   ├── loss.py             # custom Torch DAPO objective
+│   ├── remote_env.py       # TRL to authenticated sandbox client
+│   └── config.py           # YAML and secret loading
+├── infra/
+│   ├── sandbox_server.py   # disposable Docker envs
+│   ├── start_sandbox.py
+│   ├── start_vllm.py       # GPU RL rollout server
+│   ├── vllm/               # isolated vLLM env
+│   ├── quantize/           # isolated LLM Compressor env
+│   └── tasks/              # task workspaces and verifiers
+└── tests/                  # unit and Docker-sandbox tests
 ```
 
-`mini-swe-agent/` is read-only reference material. We reuse its single query/execute idea and process-group timeout, not its framework layers or magic completion command.
-
-## Setup and checks
+### Setup and checks
 
 ```bash
 uv sync --extra dev --extra sandbox
@@ -36,7 +41,7 @@ uv run pytest -q
 uv run ruff check . --exclude mini-swe-agent
 ```
 
-GPU processes have separate environments because the released Transformers-5 trainer, vLLM, and LLM Compressor dependency ranges do not currently resolve together:
+Training on older Ampere nodes forced me to separate GPU processes into separate environments because the released Transformers-5 trainer, vLLM, and LLM Compressor dependency ranges don't resolve together:
 
 ```bash
 uv sync --extra train
@@ -45,23 +50,23 @@ uv sync --project infra/quantize
 uv sync --extra sandbox                 # Mac only
 ```
 
-Do not merge these environments with `--no-deps`.
+You probably shouldn't merge the envs with `--no-deps` unless you know what you're doing.
 
-## Video 1: implementation order
+### Video 1: implementation order
 
 Target: 60 minutes. Keep tests and deployment infrastructure prepared off-camera.
 
-| Time | Implement | Exact order |
-|---|---|---|
-| 0–6 | Tablet diagram | task → model → tools → observations; compaction; SFT → RL → W4A16 |
-| 6–10 | Tree and YAML | `pyproject.toml`, `config.yaml`, `config.py` |
-| 10–23 | `tools.py` | results → schemas → bash timeout → image viewer → head/tail truncation |
-| 23–43 | `agent.py` | prompts → loop → model request → dispatch → trajectories |
-| 43–50 | Compaction | exact token count → 90% trigger → checkpoint → rebuilt history |
-| 50–56 | `ui.py`, `run.py` | capped Rich renderer → Markdown/bash/diff → wire dependencies |
-| 56–60 | Demo | repository edit → image task → forced compaction; show prepared tests |
+| Time  | Implement         | Exact order                                                            |
+| ----- | ----------------- | ---------------------------------------------------------------------- |
+| 0–6   | Tablet diagram    | task → model → tools → observations; compaction; SFT → RL → W4A16      |
+| 6–10  | Tree and YAML     | `pyproject.toml`, `config.yaml`, `config.py`                           |
+| 10–23 | `tools.py`        | results → schemas → bash timeout → image viewer → head/tail truncation |
+| 23–43 | `agent.py`        | prompts → loop → model request → dispatch → trajectories               |
+| 43–50 | Compaction        | exact token count → 90% trigger → checkpoint → rebuilt history         |
+| 50–56 | `ui.py`, `run.py` | capped Rich renderer → Markdown/bash/diff → wire dependencies          |
+| 56–60 | Demo              | repository edit → image task → forced compaction; show prepared tests  |
 
-### Lines worth explaining
+#### Lines worth explaining
 
 - `Toolbox.bash`: every call starts in the workspace; filesystem state persists, shell-local state does not.
 - `os.killpg`: a timeout kills child processes too.
@@ -74,7 +79,7 @@ Target: 60 minutes. Keep tests and deployment infrastructure prepared off-camera
 
 The system prompt stays short: inspect, edit, test, recover from tool failures, prefer minimal changes, and finish only with evidence. The checkpoint prompt explicitly preserves state, constraints, files, command results, failures, and next actions.
 
-## Run the Video 1 agent
+### Run the Video 1 agent
 
 Edit only these YAML fields:
 
@@ -101,21 +106,21 @@ Use a disposable repository for the first run. For an image demo, place a PNG in
 
 The hosted endpoint must support OpenAI chat completions, tool calls, and structured `image_url` content. Using a text-only provider would require a second image channel and is out of scope.
 
-## Video 2: implementation order
+### Video 2: implementation order
 
 Target: 60 minutes, with sandbox/container files prepared off-camera.
 
-| Time | Implement | Exact order |
-|---|---|---|
-| 0–5 | Training story | successful trajectories → SFT → verifier RL |
-| 5–14 | `remote_env.py` | reset → tools → WSS request → score → infrastructure masking |
-| 14–25 | QLoRA SFT | NF4 → language LoRA targets → assistant-only SFT |
-| 25–43 | `loss.py` | masks → sequence ratio → asymmetric clip → optional KL → token normalization |
-| 43–50 | Trainer bridge | subclass TRL `_compute_loss`; call the hand-written loss |
-| 50–56 | Launch/package | Mac sandbox + GPU-1 vLLM + GPU-0 trainer → merge/GPTQ W4A16 |
-| 56–60 | Time-lapse/demo | base vs SFT vs RL through unchanged `run.py` |
+| Time  | Implement       | Exact order                                                                  |
+| ----- | --------------- | ---------------------------------------------------------------------------- |
+| 0–5   | Training story  | successful trajectories → SFT → verifier RL                                  |
+| 5–14  | `remote_env.py` | reset → tools → WSS request → score → infrastructure masking                 |
+| 14–25 | QLoRA SFT       | NF4 → language LoRA targets → assistant-only SFT                             |
+| 25–43 | `loss.py`       | masks → sequence ratio → asymmetric clip → optional KL → token normalization |
+| 43–50 | Trainer bridge  | subclass TRL `_compute_loss`; call the hand-written loss                     |
+| 50–56 | Launch/package  | Mac sandbox + GPU-1 vLLM + GPU-0 trainer → merge/GPTQ W4A16                  |
+| 56–60 | Time-lapse/demo | base vs SFT vs RL through unchanged `run.py`                                 |
 
-### The hand-written objective
+#### The hand-written objective
 
 `dapo_loss` implements:
 
@@ -130,14 +135,22 @@ Sequence-level ratios suit sequence-level verifier rewards. Token-level normaliz
 
 TRL still owns generation, multimodal forwarding, reward-standardized advantages, optimizer steps, and distributed synchronization. `build_dapo_trainer()` replaces only the loss boundary. Pin TRL 1.8 because this is intentionally a small dependency on its prepared-batch interface.
 
-## Data
+### Data
 
 SFT JSONL contains successful canonical `messages` conversations. Image tool responses use structured blocks with a dataset-accessible image path. Reject failed, secret-bearing, or schema-incompatible trajectories. Include long-history → checkpoint → successful-continuation examples.
 
 RL JSONL is prompt-only and selects a trusted Mac task:
 
 ```json
-{"task_id":"example","prompt":[{"role":"user","content":"Create answer.txt containing exactly: agent ready"}]}
+{
+  "task_id": "example",
+  "prompt": [
+    {
+      "role": "user",
+      "content": "Create answer.txt containing exactly: agent ready"
+    }
+  ]
+}
 ```
 
 A local task is `infra/tasks/<id>/task.json` plus optional `workspace/`:
@@ -157,7 +170,7 @@ The image, verifier, and workspace are trusted curator inputs. Model commands ru
 
 Use SWE-Gym, curated SWE-smith, Endless Terminals, and SWE-bench Multimodal development data for training. Reserve Terminal-Bench 2 and SWE-bench test tasks for evaluation.
 
-## Start the Mac environment
+### Start the Mac environment
 
 Set `sandbox.tasks_dir`, `sandbox.public_url`, and limits in `config.yaml`. Keep the bearer token outside YAML:
 
@@ -199,7 +212,7 @@ The real local smoke test must end with `reward=1.0` and no output from:
 docker ps -a --filter 'name=agent-ground-up-' --format '{{.Names}} {{.Status}}'
 ```
 
-## Serve the Video 1 model on `upnquick`
+### Serve the Video 1 model on `upnquick`
 
 `upnquick` has 2×A100 80 GB and driver 550.163.01. It can try CUDA-12.9 binaries through CUDA 12.x minor-version compatibility, but may lack features that require the native 575 driver. Use a clean environment and stop if the CUDA check fails:
 
@@ -237,7 +250,7 @@ ssh -N -L 8000:127.0.0.1:8000 upnquick
 
 Set `model.base_url: http://127.0.0.1:8000/v1` and keep `model.served_name: Qwen/Qwen3.6-27B`, then run `API_KEY=EMPTY uv run python run.py 'your task'`.
 
-## Train on 2×A100
+### Train on 2×A100
 
 No model-generated command is executed on the node. Disable completion/request logging:
 
@@ -274,7 +287,7 @@ During RL, GPU 0 trains while GPU 1 generates rollouts. The one-step gate must p
 
 Suggested full curriculum: 800 short tasks, 150 repository tasks, 50 long-horizon tasks; 70% ≤8K, 25% ≤16K, 5% ≤32K. Treat 64K as inference-only curriculum/evaluation and 128K/262K as small evaluation tails.
 
-## Merge, quantize, and test Video 2
+### Merge, quantize, and test Video 2
 
 After updating the `merge` and `quantize` YAML sections:
 
@@ -304,7 +317,7 @@ Set `model.served_name: agent-w4a16` and `model.base_url: http://127.0.0.1:8000/
 
 Compare base, SFT, and RL with identical prompts and sampling. Record verifier pass rate, valid dispatches, premature finishes, timeouts, image success, compaction continuity, and steps/tokens per success. Ship RL only if task success improves without reducing tool validity or regressing multimodal/long-context groups.
 
-## What is verified here
+### What is verified here
 
 ```bash
 uv run pytest -q
