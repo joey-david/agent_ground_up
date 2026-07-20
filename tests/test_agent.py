@@ -4,19 +4,29 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import Mock
 
 from agent_ground_up.agent import COMPACT_PROMPT, Agent
 from agent_ground_up.tools import Toolbox
+from agent_ground_up.ui import TUI
 
 
 class FakeProcessor:
     def __init__(self, force_compaction: bool = False) -> None:
         self.force_compaction = force_compaction
 
-    def count_tokens(self, messages: list[dict[str, Any]], _: Any) -> int:
+    def apply_chat_template(self, messages: list[dict[str, Any]], **_: Any) -> dict[str, list[int]]:
         if self.force_compaction and len(messages) == 2 and messages[0].get("content") != COMPACT_PROMPT:
-            return 91
-        return 20
+            return {"input_ids": list(range(91))}
+        return {"input_ids": list(range(20))}
+
+
+class FakeMessage:
+    def __init__(self, data: dict[str, Any]) -> None:
+        self.data = data
+
+    def model_dump(self, **_: Any) -> dict[str, Any]:
+        return self.data.copy()
 
 
 class FakeCompletions:
@@ -26,7 +36,7 @@ class FakeCompletions:
 
     def create(self, **kwargs: Any) -> Any:
         self.calls.append(kwargs)
-        message = self.messages.pop(0)
+        message = FakeMessage(self.messages.pop(0))
         return SimpleNamespace(choices=[SimpleNamespace(message=message)])
 
 
@@ -52,7 +62,16 @@ def tool_call(command: str) -> dict[str, Any]:
 def test_agent_executes_tool_then_finishes(tmp_path: Path) -> None:
     trajectory = tmp_path / "run.json"
     client = FakeClient([tool_call("printf hello"), {"role": "assistant", "content": "done"}])
-    agent = Agent(client, "fake", Toolbox(tmp_path), FakeProcessor(), context_window=100, trajectory_path=trajectory)
+    ui = Mock(spec=TUI)
+    agent = Agent(
+        client,
+        "fake",
+        Toolbox(tmp_path),
+        FakeProcessor(),
+        context_window=100,
+        trajectory_path=trajectory,
+        ui=ui,
+    )
     result = agent.run("inspect the project")
 
     assert result.status == "completed"
@@ -60,6 +79,9 @@ def test_agent_executes_tool_then_finishes(tmp_path: Path) -> None:
     assert result.valid_tool_calls == 1
     assert agent.messages[-2]["content"] == "hello\n[exit code: 0]"
     assert json.loads(trajectory.read_text())["result"]["status"] == "completed"
+    ui.user.assert_called_once_with("inspect the project")
+    assert ui.assistant.call_count == 2
+    ui.tool.assert_called_once_with("bash", "hello\n[exit code: 0]")
 
 
 def test_agent_compacts_at_ninety_percent(tmp_path: Path) -> None:
@@ -97,4 +119,6 @@ def test_invalid_call_becomes_observation(tmp_path: Path) -> None:
 
 def test_safe_trajectory_removes_image_bytes() -> None:
     value = {"type": "image_url", "image_url": {"url": "data:image/png;base64,secret"}}
-    assert "secret" not in json.dumps(Agent._safe(value))
+    agent = Agent(FakeClient([]), "fake", Toolbox("."), FakeProcessor())
+    agent.messages = [{"role": "tool", "content": [value]}]
+    assert "secret" not in json.dumps(agent._trajectory_messages())

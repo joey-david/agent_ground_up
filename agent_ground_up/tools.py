@@ -6,7 +6,7 @@ import os
 import signal
 import subprocess
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +15,8 @@ from PIL import Image
 
 @dataclass(slots=True)
 class ToolResult:
+    """Captured result of one bash process."""
+
     output: str
     returncode: int
     timed_out: bool = False
@@ -26,12 +28,11 @@ class ToolResult:
             suffix += " [timed out]"
         return self.output + suffix
 
-    def as_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
 
 @dataclass(slots=True)
 class ImageResult:
+    """Validated image metadata and model-ready bytes."""
+
     path: str
     mime_type: str
     width: int
@@ -45,9 +46,6 @@ class ImageResult:
             {"type": "text", "text": description},
             {"type": "image_url", "image_url": {"url": self.data_url}},
         ]
-
-    def safe_dict(self) -> dict[str, Any]:
-        return {key: value for key, value in asdict(self).items() if key != "data_url"}
 
 
 TOOL_SCHEMAS = [
@@ -88,6 +86,8 @@ TOOL_SCHEMAS = [
 
 
 class Toolbox:
+    """The two operations available to the coding agent."""
+
     def __init__(
         self,
         workdir: str | Path,
@@ -96,9 +96,7 @@ class Toolbox:
         token_counter: Callable[[str], int] | None = None,
         max_image_bytes: int = 20 * 1024 * 1024,
     ) -> None:
-        self.workdir = Path(workdir).expanduser().resolve(strict=True)
-        if not self.workdir.is_dir():
-            raise ValueError(f"Workspace is not a directory: {self.workdir}")
+        self.workdir = Path(workdir).expanduser().resolve()
         self.max_output_tokens = max_output_tokens
         self.token_counter = token_counter or (lambda text: len(text.encode("utf-8")))
         self.max_image_bytes = max_image_bytes
@@ -113,8 +111,6 @@ class Toolbox:
         Returns:
             Combined stdout/stderr, exit code, and timeout metadata.
         """
-        if not command.strip():
-            return ToolResult("bash: empty command", 2)
         if not 1 <= timeout_s <= 3600:
             return ToolResult("bash: timeout_s must be between 1 and 3600", 2)
 
@@ -123,23 +119,19 @@ class Toolbox:
             shell=True,
             executable="/bin/bash",
             cwd=self.workdir,
-            env=os.environ.copy(),
             text=True,
             encoding="utf-8",
             errors="replace",
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            start_new_session=os.name == "posix",
+            start_new_session=True,
         )
         timed_out = False
         try:
             output, _ = process.communicate(timeout=timeout_s)
         except subprocess.TimeoutExpired:
             timed_out = True
-            if os.name == "posix":
-                os.killpg(process.pid, signal.SIGKILL)
-            else:
-                process.kill()
+            os.killpg(process.pid, signal.SIGKILL)
             output, _ = process.communicate()
 
         output, omitted = self._truncate(output)
@@ -155,8 +147,8 @@ class Toolbox:
             Image metadata and a data URL for the model request.
         """
         image_path = (self.workdir / path).resolve(strict=True)
-        if not image_path.is_relative_to(self.workdir) or not image_path.is_file():
-            raise ValueError("Image must be a file inside the workspace")
+        if not image_path.is_relative_to(self.workdir):
+            raise ValueError("Image must be inside the workspace")
         size = image_path.stat().st_size
         if size > self.max_image_bytes:
             raise ValueError(f"Image exceeds {self.max_image_bytes} bytes")
@@ -170,6 +162,7 @@ class Toolbox:
         )
 
     def _truncate(self, text: str) -> tuple[str, int]:
+        """Fit output to a token budget while preserving its head and tail."""
         count = self.token_counter(text)
         if count <= self.max_output_tokens:
             return text, 0

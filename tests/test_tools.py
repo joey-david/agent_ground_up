@@ -34,7 +34,6 @@ def test_view_image_is_multimodal_and_confined(tmp_path: Path) -> None:
     assert (result.width, result.height) == (2, 3)
     assert result.data_url.startswith("data:image/png;base64,")
     assert result.content()[1]["type"] == "image_url"
-    assert "data_url" not in result.safe_dict()
 
     outside = tmp_path.parent / "outside.png"
     Image.new("RGB", (1, 1)).save(outside)

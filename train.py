@@ -155,19 +155,20 @@ def merge_adapter(config: dict[str, Any]) -> None:
     AutoProcessor.from_pretrained(values["base_model"], trust_remote_code=False).save_pretrained(output)
 
 
-def quantize_nvfp4(config: dict[str, Any]) -> None:
+def quantize_w4a16(config: dict[str, Any]) -> None:
+    """Package the merged model as Ampere-compatible GPTQ INT4 weights."""
     from datasets import load_dataset
     from llmcompressor import oneshot
-    from llmcompressor.modifiers.quantization import QuantizationModifier
+    from llmcompressor.modifiers.gptq import GPTQModifier
 
     values = section(config, "quantize")
     dataset = load_dataset("json", data_files=str(path(config, values["data"])), split="train")
     dataset = dataset.select(range(min(len(dataset), values["samples"])))
     model = str(path(config, values["model"]))
-    recipe = QuantizationModifier(
+    recipe = GPTQModifier(
         targets="Linear",
-        scheme="NVFP4",
-        ignore=[r"re:.*visual.*", r"re:.*vision.*", r"re:.*embed.*", "lm_head"],
+        scheme=values["scheme"],
+        ignore=[r"re:.*lm_head", r"re:.*visual.*", r"re:.*vision.*"],
     )
     oneshot(
         model=model,
@@ -183,7 +184,7 @@ def quantize_nvfp4(config: dict[str, Any]) -> None:
 def main() -> None:
     args = parse_args()
     config = load_config(args.config)
-    stages = {"sft": run_sft, "rl": run_rl, "merge": merge_adapter, "quantize": quantize_nvfp4}
+    stages = {"sft": run_sft, "rl": run_rl, "merge": merge_adapter, "quantize": quantize_w4a16}
     stages[args.stage](config)
 
 

@@ -9,6 +9,7 @@ from transformers import AutoProcessor
 from agent_ground_up.agent import Agent
 from agent_ground_up.config import load_config, path, secret, section
 from agent_ground_up.tools import Toolbox
+from agent_ground_up.ui import TUI
 
 
 def parse_args() -> argparse.Namespace:
@@ -23,16 +24,18 @@ def main() -> None:
     config = load_config(args.config)
     model_config = section(config, "model")
     agent_config = section(config, "agent")
+    ui_config = section(config, "ui")
     if not model_config.get("base_url"):
         raise SystemExit("Set model.base_url in config.yaml")
-    processor = AutoProcessor.from_pretrained(model_config["name"], trust_remote_code=False)
+    processor = AutoProcessor.from_pretrained(model_config["processor"], trust_remote_code=False)
 
     def token_counter(text: str) -> int:
         return len(processor.tokenizer.encode(text, add_special_tokens=False))
 
+    ui = TUI(max_lines=ui_config["max_lines"])
     agent = Agent(
         OpenAI(base_url=model_config["base_url"], api_key=secret(model_config, "api_key_env")),
-        model_config["name"],
+        model_config["served_name"],
         Toolbox(
             path(config, agent_config["workdir"]),
             max_output_tokens=agent_config["max_tool_output_tokens"],
@@ -45,10 +48,10 @@ def main() -> None:
         max_steps=agent_config["max_steps"],
         wall_time_s=agent_config["wall_time_s"],
         trajectory_path=path(config, agent_config["trajectory"]),
+        ui=ui,
     )
     result = agent.run(args.task)
-    print(result.answer)
-    print(f"\nstatus={result.status} steps={result.steps} compactions={result.compactions}")
+    ui.status(f"status={result.status} steps={result.steps} compactions={result.compactions}")
 
 
 if __name__ == "__main__":

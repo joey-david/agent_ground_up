@@ -8,10 +8,11 @@ from agent_ground_up.config import load_config, section
 
 
 def main() -> None:
+    """Start TRL's single-GPU rollout server used during RL."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default=os.getenv("AGENT_CONFIG", "config.yaml"))
     args = parser.parse_args()
-    values = section(load_config(args.config), "vllm")
+    values = section(load_config(args.config), "rollout_server")
     command = [
         "trl",
         "vllm-serve",

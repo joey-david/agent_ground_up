@@ -24,7 +24,7 @@ MAX_ENVS = VALUES["max_envs"]
 MAX_STEPS = VALUES["max_steps"]
 MAX_IMAGE_BYTES = VALUES["max_image_bytes"]
 MAX_OUTPUT_TOKENS = VALUES["max_output_tokens"]
-TOKENIZER = AutoTokenizer.from_pretrained(section(CONFIG, "model")["name"], trust_remote_code=False)
+TOKENIZER = AutoTokenizer.from_pretrained(section(CONFIG, "model")["processor"], trust_remote_code=False)
 SEMAPHORE = asyncio.Semaphore(MAX_ENVS)
 app = FastAPI(docs_url=None, redoc_url=None)
 
@@ -144,7 +144,7 @@ class Sandbox:
                 check=False,
             )
             return {"reward": float(result.returncode == 0), "verifier_output": result.stdout[-4000:]}
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        except subprocess.TimeoutExpired:
             return {"reward": 0.0, "infrastructure_error": True}
         finally:
             self.close()

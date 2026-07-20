@@ -3,7 +3,7 @@
 Two videos build one small multimodal coding agent:
 
 1. Type the runtime and run Qwen3.6-27B through a hosted OpenAI-compatible endpoint.
-2. Type its QLoRA SFT pipeline, remote environment, and DAPO loss; train on 2×A100; deploy NVFP4 on Blackwell.
+2. Type its QLoRA SFT pipeline, remote environment, and DAPO loss; train and serve GPTQ W4A16 on 2×A100 80 GB.
 
 The model sees only `bash` and `view_image`. Compaction is automatic at 90%. `config.yaml` is the interface for every stage; secrets remain environment variables.
 
@@ -15,6 +15,7 @@ run.py / train.py
 agent_ground_up/
   agent.py       model loop, compaction, trajectories
   tools.py       bash and image viewer
+  ui.py          capped Markdown, shell, and diff output
   loss.py        hand-written Torch DAPO objective
   remote_env.py  TRL -> authenticated Mac sandbox
   config.py      YAML loading
@@ -30,7 +31,7 @@ infra/
 ## Setup and checks
 
 ```bash
-uv sync --extra dev
+uv sync --extra dev --extra sandbox
 uv run pytest -q
 uv run ruff check . --exclude mini-swe-agent
 ```
@@ -48,17 +49,17 @@ Do not merge these environments with `--no-deps`.
 
 ## Video 1: implementation order
 
-Target: 80–90 minutes, about 300 live-written lines.
+Target: 60 minutes. Keep tests and deployment infrastructure prepared off-camera.
 
 | Time | Implement | Exact order |
 |---|---|---|
-| 0–6 | Tablet diagram | task → model → tools → observations; add automatic compaction; zoom out to SFT → RL → NVFP4 |
-| 6–12 | Tree and config | `pyproject.toml`, `config.yaml`, `config.py` |
-| 12–30 | `tools.py` | result dataclasses → schemas → `Toolbox` → bash timeout → image validation → token head/tail truncation |
-| 30–55 | `agent.py` | prompts → `RunResult` → loop → model request → tool dispatch → safe trajectory |
-| 55–70 | Compaction | exact processor token count → 90% trigger → tools-off summary → rebuild history |
-| 70–78 | `run.py` | load YAML → processor/client/tools/agent → run |
-| 78–90 | Tests and demo | fake-model tests → repository edit → image task → forced compaction |
+| 0–6 | Tablet diagram | task → model → tools → observations; compaction; SFT → RL → W4A16 |
+| 6–10 | Tree and YAML | `pyproject.toml`, `config.yaml`, `config.py` |
+| 10–23 | `tools.py` | results → schemas → bash timeout → image viewer → head/tail truncation |
+| 23–43 | `agent.py` | prompts → loop → model request → dispatch → trajectories |
+| 43–50 | Compaction | exact token count → 90% trigger → checkpoint → rebuilt history |
+| 50–56 | `ui.py`, `run.py` | capped Rich renderer → Markdown/bash/diff → wire dependencies |
+| 56–60 | Demo | repository edit → image task → forced compaction; show prepared tests |
 
 ### Lines worth explaining
 
@@ -66,9 +67,10 @@ Target: 80–90 minutes, about 300 live-written lines.
 - `os.killpg`: a timeout kills child processes too.
 - `_truncate`: binary-search tokenizer-sized head and tail; do not promise a token budget and slice characters.
 - `if not tool_calls`: this is the only completion condition.
-- `_safe`: image bytes and credentials never enter saved trajectories.
+- `_trajectory_messages`: image bytes never enter saved trajectories.
 - `_prompt_tokens`: compaction fails closed if the exact model processor cannot render the request.
 - `_maybe_compact`: preserve the immutable task plus one continuation checkpoint; compaction is not a tool.
+- `crop_middle`: every displayed string keeps its beginning and end; Rich owns Markdown and syntax highlighting.
 
 The system prompt stays short: inspect, edit, test, recover from tool failures, prefer minimal changes, and finish only with evidence. The checkpoint prompt explicitly preserves state, constraints, files, command results, failures, and next actions.
 
@@ -78,11 +80,14 @@ Edit only these YAML fields:
 
 ```yaml
 model:
-  name: Qwen/Qwen3.6-27B
+  processor: Qwen/Qwen3.6-27B
+  served_name: Qwen/Qwen3.6-27B
   base_url: https://YOUR-ENDPOINT/v1
 agent:
   workdir: /tmp/agent-demo
   trajectory: runs/video1.json
+ui:
+  max_lines: 40
 ```
 
 Then:
@@ -98,18 +103,17 @@ The hosted endpoint must support OpenAI chat completions, tool calls, and struct
 
 ## Video 2: implementation order
 
-Target: 80–90 minutes, with sandbox/container files prepared off-camera.
+Target: 60 minutes, with sandbox/container files prepared off-camera.
 
 | Time | Implement | Exact order |
 |---|---|---|
-| 0–8 | Training story | successful trajectories → SFT → verifier RL; explain why GRPO alone cannot discover the interface efficiently |
-| 8–20 | `remote_env.py` | reset → typed tools → WSS request → score → infrastructure masking |
-| 20–35 | QLoRA SFT | NF4 config → language-only LoRA targets → assistant-only SFT |
-| 35–58 | `loss.py` | masks → sequence ratio → asymmetric clipping → advantages → optional KL → DAPO token normalization → metrics |
-| 58–68 | Trainer bridge | subclass TRL `_compute_loss`; let TRL supply rollouts/log-probs, then call our loss |
-| 68–76 | Remote launch | Mac sandbox + GPU-1 vLLM + GPU-0 trainer |
-| 76–82 | Merge/NVFP4 | merge adapter → representative calibration → compress language layers |
-| 82–90 | Time-lapse/demo | base vs SFT vs RL using unchanged `run.py` |
+| 0–5 | Training story | successful trajectories → SFT → verifier RL |
+| 5–14 | `remote_env.py` | reset → tools → WSS request → score → infrastructure masking |
+| 14–25 | QLoRA SFT | NF4 → language LoRA targets → assistant-only SFT |
+| 25–43 | `loss.py` | masks → sequence ratio → asymmetric clip → optional KL → token normalization |
+| 43–50 | Trainer bridge | subclass TRL `_compute_loss`; call the hand-written loss |
+| 50–56 | Launch/package | Mac sandbox + GPU-1 vLLM + GPU-0 trainer → merge/GPTQ W4A16 |
+| 56–60 | Time-lapse/demo | base vs SFT vs RL through unchanged `run.py` |
 
 ### The hand-written objective
 
@@ -180,6 +184,59 @@ sandbox:
 
 If using Cloudflare Access, export `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET` on the node. The client sends those headers automatically.
 
+On macOS, Homebrew's `docker` formula is only the client. This project was verified with Colima as its daemon:
+
+```bash
+brew install colima
+colima start --cpu 2 --memory 4 --disk 20
+docker version
+# Later: colima stop
+```
+
+The real local smoke test must end with `reward=1.0` and no output from:
+
+```bash
+docker ps -a --filter 'name=agent-ground-up-' --format '{{.Names}} {{.Status}}'
+```
+
+## Serve the Video 1 model on `upnquick`
+
+`upnquick` has 2×A100 80 GB and driver 550.163.01. It can try CUDA-12.9 binaries through CUDA 12.x minor-version compatibility, but may lack features that require the native 575 driver. Use a clean environment and stop if the CUDA check fails:
+
+```bash
+uv venv ~/.venvs/qwen36-vllm --python 3.12
+uv pip install --python ~/.venvs/qwen36-vllm/bin/python \
+  'vllm==0.19.1' --torch-backend=cu129
+
+~/.venvs/qwen36-vllm/bin/python - <<'PY'
+import torch, vllm
+print('torch', torch.__version__, 'runtime', torch.version.cuda, 'vllm', vllm.__version__)
+print('gpus', torch.cuda.device_count(), torch.cuda.get_device_name(0))
+PY
+```
+
+Serve both GPUs without exposing the port publicly:
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 VLLM_LOGGING_LEVEL=WARNING \
+~/.venvs/qwen36-vllm/bin/vllm serve Qwen/Qwen3.6-27B \
+  --host 127.0.0.1 --port 8000 \
+  --tensor-parallel-size 2 \
+  --max-model-len 32768 \
+  --reasoning-parser qwen3 \
+  --enable-auto-tool-choice \
+  --tool-call-parser qwen3_coder \
+  --disable-uvicorn-access-log
+```
+
+From the Mac, keep this tunnel open:
+
+```bash
+ssh -N -L 8000:127.0.0.1:8000 upnquick
+```
+
+Set `model.base_url: http://127.0.0.1:8000/v1` and keep `model.served_name: Qwen/Qwen3.6-27B`, then run `API_KEY=EMPTY uv run python run.py 'your task'`.
+
 ## Train on 2×A100
 
 No model-generated command is executed on the node. Disable completion/request logging:
@@ -200,7 +257,7 @@ SFT on GPU 0:
 CUDA_VISIBLE_DEVICES=0 uv run --extra train python train.py sft
 ```
 
-Start generation on GPU 1 after setting `vllm.model: outputs/sft/final`:
+Start generation on GPU 1 after setting `rollout_server.model: outputs/sft/final`:
 
 ```bash
 CUDA_VISIBLE_DEVICES=1 VLLM_LOGGING_LEVEL=WARNING \
@@ -213,7 +270,7 @@ RL on GPU 0:
 CUDA_VISIBLE_DEVICES=0 uv run --extra train python train.py rl
 ```
 
-The one-step RL gate must prove four remote rollouts, multimodal tool parsing, QLoRA backward, custom-loss metrics, and vLLM adapter synchronization. If it fails, stop; do not silently reduce the model or context claim.
+During RL, GPU 0 trains while GPU 1 generates rollouts. The one-step gate must prove four remote rollouts, multimodal tool parsing, QLoRA backward, custom-loss metrics, and vLLM adapter synchronization.
 
 Suggested full curriculum: 800 short tasks, 150 repository tasks, 50 long-horizon tasks; 70% ≤8K, 25% ≤16K, 5% ≤32K. Treat 64K as inference-only curriculum/evaluation and 128K/262K as small evaluation tails.
 
@@ -222,13 +279,28 @@ Suggested full curriculum: 800 short tasks, 150 repository tasks, 50 long-horizo
 After updating the `merge` and `quantize` YAML sections:
 
 ```bash
-uv run --project infra/quantize python train.py merge
-uv run --project infra/quantize python train.py quantize
+CUDA_VISIBLE_DEVICES=0 uv run --project infra/quantize python train.py merge
+CUDA_VISIBLE_DEVICES=0 uv run --project infra/quantize python train.py quantize
 ```
 
-The calibration JSONL needs a `text` field containing representative agent conversations. NVFP4 is deployment precision, not training precision. Validate the result on Blackwell; Qwen3.6 hybrid-attention compression support is a hard release gate.
+The calibration JSONL needs 512 representative agent conversations in its `text` field. GPTQ produces W4A16 weights: INT4 storage with BF16/FP16 activations, supported by Ampere and vLLM. The vision modules stay unquantized.
 
-Serve the checkpoint with an OpenAI-compatible vLLM server, change `model.name` and `model.base_url`, and rerun the same Video 1 task with unchanged agent code.
+After training and quantization, stop the trainer and rollout server, then serve the final checkpoint across both A100s:
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 VLLM_LOGGING_LEVEL=WARNING \
+~/.venvs/qwen36-vllm/bin/vllm serve outputs/agent-w4a16 \
+  --host 127.0.0.1 --port 8000 \
+  --served-model-name agent-w4a16 \
+  --tensor-parallel-size 2 \
+  --max-model-len 32768 \
+  --reasoning-parser qwen3 \
+  --enable-auto-tool-choice \
+  --tool-call-parser qwen3_coder \
+  --disable-uvicorn-access-log
+```
+
+Set `model.served_name: agent-w4a16` and `model.base_url: http://127.0.0.1:8000/v1`. Keep `model.processor: Qwen/Qwen3.6-27B` so the Mac can render and count the remote model's requests, then rerun the Video 1 task unchanged.
 
 Compare base, SFT, and RL with identical prompts and sampling. Record verifier pass rate, valid dispatches, premature finishes, timeouts, image success, compaction continuity, and steps/tokens per success. Ship RL only if task success improves without reducing tool validity or regressing multimodal/long-context groups.
 
@@ -242,4 +314,4 @@ python3 -m py_compile agent_ground_up/*.py run.py train.py infra/*.py
 
 Unit tests cover shell results/timeouts/truncation, image confinement, tool-loop completion, forced compaction, invalid calls, trajectory sanitization, remote reward handling, and the Torch loss.
 
-External checks still required: hosted Qwen compatibility, Docker lifecycle, authenticated WSS, one-step QLoRA/vLLM synchronization, NVFP4 conversion, Blackwell serving, and benchmark results.
+External checks still required: hosted Qwen compatibility, authenticated WSS, one-step QLoRA/vLLM synchronization, Qwen3.6 GPTQ conversion, two-A100 W4A16 serving, and benchmark results.

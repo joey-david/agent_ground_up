@@ -1,0 +1,51 @@
+# =============================================================================
+# agent-ground-up — requirements.txt
+# =============================================================================
+# Install:  pip install -r requirements.txt
+# For a specific extras group, run:
+#   pip install -r requirements.txt  (all core + train + sandbox)
+# Or install selectively with pip:
+#   pip install -r <(grep -E '^[a-zA-Z]' requirements.txt | grep -v '^#')
+#
+# The pyproject.toml is the source of truth — this file mirrors it.
+# =============================================================================
+
+# ── Core dependencies ────────────────────────────────────────────────────────
+openai>=1.68
+pillow>=10
+pyyaml>=6
+transformers>=5.2
+
+# ── Training pipeline (SFT / RL) ─────────────────────────────────────────────
+accelerate>=1.2
+bitsandbytes>=0.45
+datasets>=3.2
+peft>=0.14
+trl>=1.8,<1.9
+websockets>=14
+
+# ── Sandbox server ───────────────────────────────────────────────────────────
+fastapi>=0.115
+uvicorn[standard]>=0.34
+
+# ── Runtime (used by loss.py / agent.py) ─────────────────────────────────────
+torch>=2.6
+
+# ── mini-swe-agent dependencies (submodule) ──────────────────────────────────
+# Uncomment if you actively develop or run mini-swe-agent from this repo:
+# litellm>=1.75.5,!=1.82.7,!=1.82.8
+# pydantic>=2.0
+# requests
+# jinja2
+# rich
+# typer
+# tenacity
+# python-dotenv
+# platformdirs
+# textual
+# prompt_toolkit
+
+# ── Dev / testing ────────────────────────────────────────────────────────────
+# Install with:  pip install -r requirements-dev.txt
+# pytest>=8
+# ruff>=0.9

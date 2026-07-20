@@ -1,5 +1,6 @@
 model:
-  name: Qwen/Qwen3.6-27B
+  processor: Qwen/Qwen3.6-27B
+  served_name: Qwen/Qwen3.6-27B
   base_url: null
   api_key_env: API_KEY
   context_window: 262144
@@ -10,8 +11,11 @@ agent:
   compact_at: 0.90
   max_output_tokens: 4096
   max_tool_output_tokens: 8192
-  max_steps: 80
+  max_steps: 128
   wall_time_s: 3600
+
+ui:
+  max_lines: 40
 
 sandbox:
   tasks_dir: infra/tasks
@@ -20,7 +24,7 @@ sandbox:
   token_env: AGENT_ENV_TOKEN
   public_url: http://127.0.0.1:8001
   max_envs: 2
-  max_steps: 80
+  max_steps: 128
   max_image_bytes: 20971520
   max_output_tokens: 8192
 
@@ -50,7 +54,7 @@ rl:
   epsilon_high: 0.28
   beta: 0.0
 
-vllm:
+rollout_server:
   model: outputs/sft/final
   host: 127.0.0.1
   port: 8000
@@ -65,7 +69,7 @@ merge:
 quantize:
   model: outputs/merged-bf16
   data: data/calibration.jsonl
-  output: outputs/agent-nvfp4
-  samples: 32
+  output: outputs/agent-w4a16
+  scheme: W4A16
+  samples: 512
   max_seq_length: 2048
-
