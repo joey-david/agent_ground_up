@@ -62,7 +62,7 @@ Target: 60 minutes. Keep tests and deployment infrastructure prepared off-camera
 | 6–10  | Tree and YAML     | `pyproject.toml`, `config.yaml`, `config.py`                           |
 | 10–23 | `tools.py`        | results → schemas → bash timeout → image viewer → head/tail truncation |
 | 23–43 | `agent.py`        | prompts → loop → model request → dispatch → trajectories               |
-| 43–50 | Compaction        | exact token count → 90% trigger → checkpoint → rebuilt history         |
+| 43–50 | Compaction        | native history → checkpoint → canonical state + recent user turns      |
 | 50–56 | `ui.py`, `run.py` | capped Rich renderer → Markdown/bash/diff → wire dependencies          |
 | 56–60 | Demo              | repository edit → image task → forced compaction; show prepared tests  |
 
@@ -74,10 +74,10 @@ Target: 60 minutes. Keep tests and deployment infrastructure prepared off-camera
 - `if not tool_calls`: this is the only completion condition.
 - `_trajectory_messages`: image bytes never enter saved trajectories.
 - `_prompt_tokens`: compaction fails closed if the exact model processor cannot render the request.
-- `_maybe_compact`: preserve the immutable task plus one continuation checkpoint; compaction is not a tool.
+- `_maybe_compact`: append the instruction to native history, then rebuild state plus a checkpoint and recent users.
 - `crop_middle`: every displayed string keeps its beginning and end; Rich owns Markdown and syntax highlighting.
 
-The system prompt stays short: inspect, edit, test, recover from tool failures, prefer minimal changes, and finish only with evidence. The checkpoint prompt explicitly preserves state, constraints, files, command results, failures, and next actions.
+The checkpoint starts with the active plan and summarizes only episodic history. Old checkpoints are excluded; working directory, environment facts, tools, and live `AGENTS.md` instructions are recomputed. Recent user turns remain byte-for-byte intact under `agent.recent_user_tokens`.
 
 ### Run the Video 1 agent
 
@@ -91,6 +91,7 @@ model:
 agent:
   workdir: /tmp/agent-demo
   trajectory: runs/video1.json
+  recent_user_tokens: 12000
 ui:
   max_lines: 40
 ```

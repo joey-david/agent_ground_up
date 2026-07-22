@@ -42,7 +42,9 @@ def dapo_loss(
     else:
         per_token_kl = torch.zeros_like(logps)
 
-    denominator = mask.sum() if normalizer is None else torch.as_tensor(normalizer, device=logps.device)
+    denominator = (
+        mask.sum() if normalizer is None else torch.as_tensor(normalizer, device=logps.device)
+    )
     loss = (per_token_loss * mask).sum() / denominator.clamp_min(1.0)
     clipped = ((ratio < 1.0 - epsilon_low) | (ratio > 1.0 + epsilon_high)).to(logps.dtype)
     metrics = {
@@ -62,7 +64,11 @@ def build_dapo_trainer() -> type[Any]:
             completion_ids, completion_mask = inputs["completion_ids"], inputs["completion_mask"]
             input_ids = torch.cat([prompt_ids, completion_ids], dim=1)
             attention_mask = torch.cat([prompt_mask, completion_mask], dim=1)
-            mask = completion_mask if "tool_mask" not in inputs else completion_mask * inputs["tool_mask"]
+            mask = (
+                completion_mask
+                if "tool_mask" not in inputs
+                else completion_mask * inputs["tool_mask"]
+            )
             logps, _, _ = self._get_per_token_logps_and_entropies(
                 model,
                 input_ids,
@@ -99,7 +105,9 @@ def build_dapo_trainer() -> type[Any]:
             )
             mode = "train" if model.training else "eval"
             for name, value in metrics.items():
-                self._metrics[mode][f"custom_dapo/{name}"].append(self.accelerator.gather(value).mean().item())
+                self._metrics[mode][f"custom_dapo/{name}"].append(
+                    self.accelerator.gather(value).mean().item()
+                )
             return loss
 
     return DAPOTrainer

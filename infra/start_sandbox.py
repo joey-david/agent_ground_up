@@ -14,7 +14,9 @@ def main() -> None:
     args = parser.parse_args()
     os.environ["AGENT_CONFIG"] = args.config
     values = section(load_config(args.config), "sandbox")
-    uvicorn.run("infra.sandbox_server:app", host=values["host"], port=values["port"], access_log=False)
+    uvicorn.run(
+        "infra.sandbox_server:app", host=values["host"], port=values["port"], access_log=False
+    )
 
 
 if __name__ == "__main__":

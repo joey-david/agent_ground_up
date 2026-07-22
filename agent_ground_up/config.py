@@ -9,7 +9,9 @@ import yaml
 
 def load_config(path: str | Path | None = None) -> dict[str, Any]:
     """Load YAML and remember the file paths used to resolve relative values."""
-    config_path = Path(path or os.getenv("AGENT_CONFIG", "config.yaml")).expanduser().resolve(strict=True)
+    config_path = (
+        Path(path or os.getenv("AGENT_CONFIG", "config.yaml")).expanduser().resolve(strict=True)
+    )
     data = yaml.safe_load(config_path.read_text())
     data["_root"] = config_path.parent
     data["_path"] = config_path

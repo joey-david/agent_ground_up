@@ -8,7 +8,8 @@ from agent_ground_up.config import load_config, path, section
 
 LORA_TARGETS = (
     r"^model\.language_model\.layers\..*\."
-    r"(q_proj|k_proj|v_proj|o_proj|gate_proj|up_proj|down_proj|in_proj_qkv|in_proj_z|in_proj_b|in_proj_a|out_proj)$"
+    r"(q_proj|k_proj|v_proj|o_proj|gate_proj|up_proj|down_proj|in_proj_qkv|"
+    r"in_proj_z|in_proj_b|in_proj_a|out_proj)$"
 )
 
 
@@ -152,7 +153,9 @@ def merge_adapter(config: dict[str, Any]) -> None:
     )
     merged = PeftModel.from_pretrained(model, path(config, values["adapter"])).merge_and_unload()
     merged.save_pretrained(output, safe_serialization=True, max_shard_size="5GB")
-    AutoProcessor.from_pretrained(values["base_model"], trust_remote_code=False).save_pretrained(output)
+    AutoProcessor.from_pretrained(values["base_model"], trust_remote_code=False).save_pretrained(
+        output
+    )
 
 
 def quantize_w4a16(config: dict[str, Any]) -> None:

@@ -6,7 +6,13 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock
 
-from agent_ground_up.agent import COMPACT_PROMPT, Agent
+from agent_ground_up.agent import (
+    CANONICAL_PREFIX,
+    CHECKPOINT_PREFIX,
+    COMPACT_PROMPT,
+    SYSTEM_PROMPT,
+    Agent,
+)
 from agent_ground_up.tools import Toolbox
 from agent_ground_up.ui import TUI
 
@@ -16,9 +22,16 @@ class FakeProcessor:
         self.force_compaction = force_compaction
 
     def apply_chat_template(self, messages: list[dict[str, Any]], **_: Any) -> dict[str, list[int]]:
-        if self.force_compaction and len(messages) == 2 and messages[0].get("content") != COMPACT_PROMPT:
-            return {"input_ids": list(range(91))}
-        return {"input_ids": list(range(20))}
+        for message in messages:
+            for call in message.get("tool_calls") or []:
+                assert isinstance(call["function"]["arguments"], dict)
+        if (
+            self.force_compaction
+            and len(messages) == 2
+            and messages[0].get("content") != COMPACT_PROMPT
+        ):
+            return {"input_ids": [list(range(91))]}
+        return {"input_ids": [list(range(20))]}
 
 
 class FakeMessage:
@@ -78,6 +91,8 @@ def test_agent_executes_tool_then_finishes(tmp_path: Path) -> None:
     assert result.answer == "done"
     assert result.valid_tool_calls == 1
     assert agent.messages[-2]["content"] == "hello\n[exit code: 0]"
+    sent_arguments = client.chat.completions.calls[1]["messages"][2]["tool_calls"][0]["function"]
+    assert isinstance(sent_arguments["arguments"], str)
     assert json.loads(trajectory.read_text())["result"]["status"] == "completed"
     ui.user.assert_called_once_with("inspect the project")
     assert ui.assistant.call_count == 2
@@ -85,25 +100,66 @@ def test_agent_executes_tool_then_finishes(tmp_path: Path) -> None:
 
 
 def test_agent_compacts_at_ninety_percent(tmp_path: Path) -> None:
+    (tmp_path / "AGENTS.md").write_text("Always run focused tests.\n")
     client = FakeClient(
-        [{"role": "assistant", "content": "preserve next step"}, {"role": "assistant", "content": "finished"}]
+        [
+            {"role": "assistant", "content": "preserve next step"},
+            {"role": "assistant", "content": "finished"},
+        ]
     )
-    agent = Agent(client, "fake", Toolbox(tmp_path), FakeProcessor(force_compaction=True), context_window=100)
+    agent = Agent(
+        client, "fake", Toolbox(tmp_path), FakeProcessor(force_compaction=True), context_window=100
+    )
     result = agent.run("force the checkpoint")
 
     assert result.compactions == 1
     assert result.status == "completed"
     compact_call = client.chat.completions.calls[0]
     assert "tools" not in compact_call
-    assert compact_call["messages"][0]["content"] == COMPACT_PROMPT
-    assert agent.messages[1]["content"] == "force the checkpoint"
-    assert "preserve next step" in agent.messages[2]["content"]
+    assert compact_call["messages"] == [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": "force the checkpoint"},
+        {"role": "user", "content": COMPACT_PROMPT},
+    ]
+    assert agent.messages[1]["content"].startswith(CANONICAL_PREFIX)
+    assert str(tmp_path) in agent.messages[1]["content"]
+    assert "Always run focused tests." in agent.messages[1]["content"]
+    assert agent.messages[2]["content"] == f"{CHECKPOINT_PREFIX}\npreserve next step"
+    assert agent.messages[3] == {"role": "user", "content": "force the checkpoint"}
+
+
+def test_compaction_drops_old_checkpoints_and_budgets_recent_users(tmp_path: Path) -> None:
+    agent = Agent(
+        FakeClient([]),
+        "fake",
+        Toolbox(tmp_path),
+        FakeProcessor(),
+        recent_user_tokens=10,
+    )
+    older = {"role": "user", "content": "older request"}
+    newest = {"role": "user", "content": "newest request"}
+    agent.messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": f"{CANONICAL_PREFIX}\nold"},
+        {"role": "assistant", "content": f"{CHECKPOINT_PREFIX}\nold"},
+        older,
+        newest,
+    ]
+
+    assert agent._episodic_history() == [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        older,
+        newest,
+    ]
+    assert agent._recent_user_messages() == [newest]
 
 
 def test_invalid_call_becomes_observation(tmp_path: Path) -> None:
     invalid = {
         "role": "assistant",
-        "tool_calls": [{"id": "bad", "type": "function", "function": {"name": "unknown", "arguments": "{}"}}],
+        "tool_calls": [
+            {"id": "bad", "type": "function", "function": {"name": "unknown", "arguments": "{}"}}
+        ],
     }
     agent = Agent(
         FakeClient([invalid, {"role": "assistant", "content": "recovered"}]),

@@ -1,14 +1,15 @@
 model:
-  processor: Qwen/Qwen3.6-27B
-  served_name: Qwen/Qwen3.6-27B
-  base_url: null
-  api_key_env: API_KEY
-  context_window: 262144
+    processor: Qwen/Qwen3.6-27B
+    served_name: Qwen/Qwen3.6-27B
+    base_url: http://127.0.0.1:8036/v1
+    api_key_env: API_KEY
+    context_window: 32768
 
 agent:
   workdir: .
   trajectory: runs/latest.json
   compact_at: 0.90
+  recent_user_tokens: 12000
   max_output_tokens: 4096
   max_tool_output_tokens: 8192
   max_steps: 128

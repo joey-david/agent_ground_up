@@ -35,7 +35,10 @@ class RemoteCodingEnv:
         self.close()
         headers = {"Authorization": f"Bearer {self.token}"}
         if self.access_id and self.access_secret:
-            headers |= {"CF-Access-Client-Id": self.access_id, "CF-Access-Client-Secret": self.access_secret}
+            headers |= {
+                "CF-Access-Client-Id": self.access_id,
+                "CF-Access-Client-Secret": self.access_secret,
+            }
         self.socket = connect(self._websocket_url(), additional_headers=headers, open_timeout=30)
         response = self._request({"type": "reset", "task_id": row["task_id"]})
         self.reward = 0.0

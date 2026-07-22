@@ -45,7 +45,9 @@ sandbox:
     )
     monkeypatch.setenv("AGENT_CONFIG", str(config))
     monkeypatch.setenv("AGENT_ENV_TOKEN", "token")
-    monkeypatch.setattr("transformers.AutoTokenizer.from_pretrained", lambda *args, **kwargs: CharacterTokenizer())
+    monkeypatch.setattr(
+        "transformers.AutoTokenizer.from_pretrained", lambda *args, **kwargs: CharacterTokenizer()
+    )
     import infra.sandbox_server
 
     return importlib.reload(infra.sandbox_server)

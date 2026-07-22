@@ -3,24 +3,34 @@ from __future__ import annotations
 import base64
 import mimetypes
 import os
-import signal
-import subprocess
+import signal  # for sigkill
+from typing import Any
+from pathlib import Path
 from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any
+import subprocess  # NOTE: spawn processes, collect input/output/pipes, etc
 
 from PIL import Image
 
 
-@dataclass(slots=True)
-class ToolResult:
-    """Captured result of one bash process."""
+# NOTE: a dataclass avoids typing a bunch of boilerplate for a class that
+# mainly functions as a data holder. It notably auto-implements the
+# following python dunders (built-in protocols):
+# 1. __init__, which initializes the properties of an already created (
+# with __new__, only overriden for immutable types, etc) instance.
+# 2. __repr__, which is the developper/debug representation/print.
+# 3. __eq__, for == checking.
+@dataclass(slots=True)  # NOTE: slots makes the mutation of attributes more
+# rigid, e.g. fixed mem alloc, faster.
+class ToolResults:
+    """Captured result of a bash process"""
 
+    # includes output text, return code for tracking errors and successes
+    # a bool for timed_out to keep the agent moving, and ommited tokens for?
     output: str
-    returncode: int
+    returncode: str
     timed_out: bool = False
-    omitted_tokens: int = 0
+    omitted_toks: int = 0
 
     def as_text(self) -> str:
         suffix = f"\n[exit code: {self.returncode}]"
@@ -31,7 +41,7 @@ class ToolResult:
 
 @dataclass(slots=True)
 class ImageResult:
-    """Validated image metadata and model-ready bytes."""
+    """Validated image metadata and model-ready bytes"""
 
     path: str
     mime_type: str
@@ -41,7 +51,8 @@ class ImageResult:
     data_url: str
 
     def content(self) -> list[dict[str, Any]]:
-        description = f"Image: {self.path} ({self.width}x{self.height}, {self.mime_type})"
+        description = f"Image: {self.path} \
+        ({self.width}x{self.height}, {self.mime_type})"
         return [
             {"type": "text", "text": description},
             {"type": "image_url", "image_url": {"url": self.data_url}},
@@ -53,13 +64,12 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "bash",
-            "description": (
-                "Run a bash command in the workspace and return combined output plus its exit code."
-            ),
+            "description": "Run a bash command in the workspace \
+            and return combined results and exit code",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "command": {"type": "string", "description": "The command to run."},
+                    "command": {"type": "string", "description": "The command to run"},
                     "timeout_s": {
                         "type": "integer",
                         "description": "Maximum runtime in seconds.",
@@ -75,13 +85,12 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "view_image",
-            "description": (
-                "Open an image file from the workspace and show it to the multimodal model."
-            ),
+            "description": "Open an image file from the workspace and \
+            show it to the multimodal model",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "Path relative to the workspace."}
+                    "path": {"type": "string", "description": "Path relative to the workspace"},
                 },
                 "required": ["path"],
                 "additionalProperties": False,
@@ -92,16 +101,20 @@ TOOL_SCHEMAS = [
 
 
 class Toolbox:
+    # here, we should specify that we chose not to make compaction a tool available to the agent
+    # we should probably also justify why end_turn or final_answer isn't a final tool.
     """The two operations available to the coding agent."""
 
     def __init__(
         self,
         workdir: str | Path,
-        *,
-        max_output_tokens: int = 8192,
+        *,  # NOTE: force all parameters after this to be passed by name
+        max_output_tokens: int = 8192,  # max length of a tool output
+        # Callable describes a string signature: takes in str, returns an int
         token_counter: Callable[[str], int] | None = None,
         max_image_bytes: int = 20 * 1024 * 1024,
     ) -> None:
+        # .expanduser to add ~ support, .resolve to make the path absolute
         self.workdir = Path(workdir).expanduser().resolve()
         self.max_output_tokens = max_output_tokens
         self.token_counter = token_counter or (lambda text: len(text.encode("utf-8")))
@@ -114,17 +127,19 @@ class Toolbox:
             command: Bash source to execute.
             timeout_s: Maximum runtime in seconds.
 
-        Returns:
+            Returns:
             Combined stdout/stderr, exit code, and timeout metadata.
         """
         if not 1 <= timeout_s <= 3600:
-            return ToolResult("bash: timeout_s must be between 1 and 3600", 2)
+            return ToolResult("bash: timeout_s must be between 1 and 3600")
 
+        # bash commands are ran through the Popen subprocess interface.
+        # start a process running the command with bash in a new session
         process = subprocess.Popen(
             command,
             shell=True,
             executable="/bin/bash",
-            cwd=self.workdir,
+            cmd=self.workdir,
             text=True,
             encoding="utf-8",
             errors="replace",
@@ -137,11 +152,11 @@ class Toolbox:
             output, _ = process.communicate(timeout=timeout_s)
         except subprocess.TimeoutExpired:
             timed_out = True
+            # if the process times out, kill it via sigkill with os
             os.killpg(process.pid, signal.SIGKILL)
             output, _ = process.communicate()
 
-        output, omitted = self._truncate(output)
-        return ToolResult(output, process.returncode if not timed_out else -1, timed_out, omitted)
+        output, ommited = self._truncate(output)
 
     def view_image(self, path: str) -> ImageResult:
         """Read an image from the workspace.
@@ -154,10 +169,13 @@ class Toolbox:
         """
         image_path = (self.workdir / path).resolve(strict=True)
         if not image_path.is_relative_to(self.workdir):
-            raise ValueError("Image must be inside the workspace")
+            raise ValueError("image must be in workspace")
         size = image_path.stat().st_size
         if size > self.max_image_bytes:
-            raise ValueError(f"Image exceeds {self.max_image_bytes} bytes")
+            raise ValueError(
+                f"Image exceeds the maximum byte limit of \
+            {self.max_image_bytes} bytes"
+            )
         with Image.open(image_path) as image:
             image.verify()
             width, height = image.size
@@ -177,7 +195,7 @@ class Toolbox:
         )
 
     def _truncate(self, text: str) -> tuple[str, int]:
-        """Fit output to a token budget while preserving its head and tail."""
+        """Fit output to a token budget while preserving head and tail"""
         count = self.token_counter(text)
         if count <= self.max_output_tokens:
             return text, 0
@@ -200,6 +218,6 @@ class Toolbox:
             else:
                 hi = mid - 1
         tail = text[len(text) - lo :]
-        omitted = max(0, count - self.token_counter(head) - self.token_counter(tail))
-        marker = f"\n... [{omitted} tokens omitted] ...\n"
-        return head + marker + tail, omitted
+        ommited = max(0, count - self.token_counter(head) - self.token_counter(tail))
+        marker = f"\n... [{ommited} tokens omitted] ...\n"
+        return head + marker + tail, ommited

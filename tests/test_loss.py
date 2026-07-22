@@ -30,7 +30,15 @@ def test_dapo_masks_padding_and_backpropagates() -> None:
 def test_dapo_requires_reference_for_kl() -> None:
     values = torch.zeros((1, 2))
     try:
-        dapo_loss(values, values, torch.ones(1), torch.ones_like(values), epsilon_low=0.2, epsilon_high=0.2, beta=0.1)
+        dapo_loss(
+            values,
+            values,
+            torch.ones(1),
+            torch.ones_like(values),
+            epsilon_low=0.2,
+            epsilon_high=0.2,
+            beta=0.1,
+        )
     except ValueError as error:
         assert "ref_logps" in str(error)
     else:

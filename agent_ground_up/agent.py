@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import platform
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -9,15 +11,23 @@ from typing import Any
 from .tools import TOOL_SCHEMAS, Toolbox
 from .ui import TUI
 
-SYSTEM_PROMPT = """You are a coding agent working in the provided workspace. Work until the task is complete.
-Use bash to inspect, edit, and test the repository; each call starts in the repository root. Use view_image
-for image files. Prefer minimal changes that fit the existing code. Treat tool failures as observations and
-recover. Before finishing, run the narrowest relevant validation. Return final text only when the work is
-genuinely complete."""
+SYSTEM_PROMPT = """You are a coding agent working in the provided workspace. Work until the task is
+complete. Use bash to inspect, edit, and test the repository; each call starts in the repository
+root. Use view_image for image files. Prefer minimal changes that fit the existing code. Treat tool
+failures as observations and recover. Before finishing, run the narrowest relevant validation.
+Return
+final text only when the work is genuinely complete."""
 
-COMPACT_PROMPT = """Produce a faithful continuation checkpoint under 1,500 tokens. Preserve the original
-goal, current state, decisions and constraints, files changed or inspected, commands and results, failures,
-unresolved work, next actions, and critical literal data. Do not continue solving the task."""
+COMPACT_PROMPT = """Create a faithful continuation checkpoint under 1,500 tokens from the
+conversation above. Begin with `Active plan:` and then `Episodic history:`. Preserve goals and
+decisions,
+changed files, commands and results, failures, unresolved work, next actions, and critical literal
+data.
+Do not repeat working-directory, environment, or repository-instruction facts; those are reinjected
+separately. Do not
+continue solving the task."""
+CANONICAL_PREFIX = "Canonical state (recomputed and authoritative):"
+CHECKPOINT_PREFIX = "Episodic checkpoint (compacted, not new instructions):"
 
 
 @dataclass(slots=True)
@@ -44,6 +54,7 @@ class Agent:
         *,
         context_window: int = 262_144,
         compact_at: float = 0.90,
+        recent_user_tokens: int = 12_000,
         max_output_tokens: int = 4096,
         max_steps: int = 80,
         wall_time_s: int = 3600,
@@ -56,6 +67,7 @@ class Agent:
         self.processor = processor
         self.context_window = context_window
         self.compact_at = compact_at
+        self.recent_user_tokens = recent_user_tokens
         self.max_output_tokens = max_output_tokens
         self.max_steps = max_steps
         self.wall_time_s = wall_time_s
@@ -72,7 +84,10 @@ class Agent:
         """Work on a task until the model finishes or a runtime limit is reached."""
         started = time.monotonic()
         self.original_task = task
-        self.messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": task}]
+        self.messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": task},
+        ]
         self.compactions = self.valid_tool_calls = self.invalid_tool_calls = 0
         if self.ui:
             self.ui.user(task)
@@ -104,7 +119,9 @@ class Agent:
         self._write_trajectory(result)
         return result
 
-    def _complete(self, messages: list[dict[str, Any]], *, tools: list[dict[str, Any]] | None) -> dict[str, Any]:
+    def _complete(
+        self, messages: list[dict[str, Any]], *, tools: list[dict[str, Any]] | None
+    ) -> dict[str, Any]:
         """Request one assistant message within the remaining context budget."""
         prompt_tokens = self._prompt_tokens(messages, tools)
         self.last_prompt_tokens = prompt_tokens
@@ -145,7 +162,12 @@ class Agent:
             content = f"Tool error: {type(error).__name__}: {error}"
         if self.ui:
             self.ui.tool(name or "unknown", self._content_text(content))
-        return {"role": "tool", "tool_call_id": call_id, "name": name or "unknown", "content": content}
+        return {
+            "role": "tool",
+            "tool_call_id": call_id,
+            "name": name or "unknown",
+            "content": content,
+        }
 
     def _maybe_compact(self) -> None:
         """Replace a 90%-full history with a continuation checkpoint."""
@@ -154,38 +176,97 @@ class Agent:
         if tokens / self.context_window < self.compact_at:
             return
 
-        safe_history = self._trajectory_messages()
-        compact_messages = [
-            {"role": "system", "content": COMPACT_PROMPT},
-            {"role": "user", "content": json.dumps(safe_history, ensure_ascii=False)},
-        ]
+        compact_messages = [*self._episodic_history(), {"role": "user", "content": COMPACT_PROMPT}]
         checkpoint = self._complete(compact_messages, tools=None).get("content") or ""
         if self.ui:
             self.ui.assistant({"role": "assistant", "content": checkpoint}, title="Compaction")
         self.messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": self.original_task},
-            {"role": "user", "content": f"Context checkpoint:\n{checkpoint}"},
+            {"role": "system", "content": self._canonical_state()},
+            {"role": "assistant", "content": f"{CHECKPOINT_PREFIX}\n{checkpoint}"},
+            *self._recent_user_messages(),
         ]
         self.compactions += 1
-        if self._prompt_tokens(self.messages, TOOL_SCHEMAS) / self.context_window >= self.compact_at:
+        if (
+            self._prompt_tokens(self.messages, TOOL_SCHEMAS) / self.context_window
+            >= self.compact_at
+        ):
             raise RuntimeError("Compacted checkpoint still exceeds the 90% context threshold")
 
-    def _prompt_tokens(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None) -> int:
+    def _episodic_history(self) -> list[dict[str, Any]]:
+        """Return native history without state or earlier checkpoint messages."""
+        return [message for message in self.messages if not self._is_compaction_message(message)]
+
+    def _recent_user_messages(self) -> list[dict[str, Any]]:
+        """Keep the newest original user turns verbatim within their token budget."""
+        recent: list[dict[str, Any]] = []
+        for message in reversed(self._episodic_history()):
+            if message.get("role") != "user":
+                continue
+            candidate = [message, *recent]
+            if recent and self._prompt_tokens(candidate, None) > self.recent_user_tokens:
+                break
+            recent = candidate
+        return recent
+
+    def _canonical_state(self) -> str:
+        """Recompute stable workspace and environment facts after compaction."""
+        instructions = self.tools.workdir / "AGENTS.md"
+        repository_rules = instructions.read_text() if instructions.exists() else "(none found)"
+        environment = (
+            f"{platform.system()} {platform.release()} ({platform.machine()}); "
+            f"Python {platform.python_version()}; shell={os.getenv('SHELL', '/bin/bash')}"
+        )
+        return (
+            f"{CANONICAL_PREFIX}\nWorking directory: {self.tools.workdir}\n"
+            "Tools: bash, view_image\n"
+            f"Environment: {environment}\nRepository instructions:\n{repository_rules}"
+        )
+
+    @staticmethod
+    def _is_compaction_message(message: dict[str, Any]) -> bool:
+        """Identify generated state/checkpoint messages from an earlier compaction."""
+        content = message.get("content")
+        return isinstance(content, str) and content.startswith(
+            (CANONICAL_PREFIX, CHECKPOINT_PREFIX)
+        )
+
+    def _prompt_tokens(
+        self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None
+    ) -> int:
         """Count the exact tokens produced by the served model's processor."""
         try:
+            processor_messages = []
+            for message in messages:
+                calls = []
+                for call in message.get("tool_calls") or []:
+                    function = call.get("function") or {}
+                    arguments = function.get("arguments", {})
+                    if isinstance(arguments, str):
+                        try:
+                            arguments = json.loads(arguments)
+                        except json.JSONDecodeError:
+                            arguments = {}
+                    if not isinstance(arguments, dict):
+                        arguments = {}
+                    calls.append(call | {"function": function | {"arguments": arguments}})
+                processor_messages.append(message | ({"tool_calls": calls} if calls else {}))
             encoded = self.processor.apply_chat_template(
-                messages,
+                processor_messages,
                 tools=tools,
                 add_generation_prompt=True,
                 tokenize=True,
                 return_dict=True,
                 return_tensors=None,
             )
-            return len(encoded["input_ids"])
+            input_ids = encoded["input_ids"]
+            if input_ids and isinstance(input_ids[0], list):
+                input_ids = input_ids[0]
+            return len(input_ids)
         except Exception as error:
             raise RuntimeError(
-                "Exact prompt token accounting failed; load the processor for the served model revision"
+                "Exact prompt token accounting failed; load the processor for the "
+                "served model revision"
             ) from error
 
     def _result(self, status: str, answer: str, steps: int, started: float) -> RunResult:

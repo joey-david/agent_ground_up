@@ -53,11 +53,15 @@ class TUI:
                 source = arguments.get("command") or arguments.get("path") or raw_arguments
             language = "bash" if name == "bash" else "text"
             self.console.print(f"[bold cyan]→ {name}[/]")
-            self.console.print(Syntax(crop_middle(source, self.max_lines), language, word_wrap=True))
+            self.console.print(
+                Syntax(crop_middle(source, self.max_lines), language, word_wrap=True)
+            )
 
     def tool(self, name: str, text: str) -> None:
         """Render a tool observation, highlighting unified diffs when present."""
-        is_diff = any(line.startswith(("diff --git", "@@ ", "+++ ", "--- ")) for line in text.splitlines())
+        is_diff = any(
+            line.startswith(("diff --git", "@@ ", "+++ ", "--- ")) for line in text.splitlines()
+        )
         language = "diff" if is_diff else None
         self._show(f"Tool · {name}", text, "cyan", language=language)
 

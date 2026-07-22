@@ -44,6 +44,7 @@ def main() -> None:
         processor,
         context_window=model_config["context_window"],
         compact_at=agent_config["compact_at"],
+        recent_user_tokens=agent_config["recent_user_tokens"],
         max_output_tokens=agent_config["max_output_tokens"],
         max_steps=agent_config["max_steps"],
         wall_time_s=agent_config["wall_time_s"],

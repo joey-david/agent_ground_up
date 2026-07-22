@@ -24,7 +24,9 @@ MAX_ENVS = VALUES["max_envs"]
 MAX_STEPS = VALUES["max_steps"]
 MAX_IMAGE_BYTES = VALUES["max_image_bytes"]
 MAX_OUTPUT_TOKENS = VALUES["max_output_tokens"]
-TOKENIZER = AutoTokenizer.from_pretrained(section(CONFIG, "model")["processor"], trust_remote_code=False)
+TOKENIZER = AutoTokenizer.from_pretrained(
+    section(CONFIG, "model")["processor"], trust_remote_code=False
+)
 SEMAPHORE = asyncio.Semaphore(MAX_ENVS)
 app = FastAPI(docs_url=None, redoc_url=None)
 
@@ -32,7 +34,8 @@ app = FastAPI(docs_url=None, redoc_url=None)
 class Sandbox:
     def __init__(self, task_id: str) -> None:
         if not task_id or any(
-            character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_" for character in task_id
+            character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+            for character in task_id
         ):
             raise ValueError("invalid task id")
         self.task_dir = (TASKS_DIR / task_id).resolve()
@@ -70,13 +73,20 @@ class Sandbox:
         workspace = self.task_dir / "workspace"
         if workspace.is_dir():
             self._host(["docker", "cp", f"{workspace}/.", f"{self.name}:/workspace"])
-        self._host(["docker", "exec", "--user", "0", self.name, "chown", "-R", "65534:65534", "/workspace"])
+        self._host(
+            ["docker", "exec", "--user", "0", self.name, "chown", "-R", "65534:65534", "/workspace"]
+        )
         return str(self.config.get("observation", "Workspace ready."))
 
     def bash(self, command: str, timeout_s: int) -> dict[str, Any]:
         if self.steps >= MAX_STEPS:
             return {"text": "Episode step limit reached.", "valid": False, "episode_limit": True}
-        if not isinstance(command, str) or not command.strip() or len(command) > 100_000 or not 1 <= timeout_s <= 3600:
+        if (
+            not isinstance(command, str)
+            or not command.strip()
+            or len(command) > 100_000
+            or not 1 <= timeout_s <= 3600
+        ):
             return {"text": "Invalid bash arguments.", "valid": False}
         self.steps += 1
         try:
@@ -101,7 +111,11 @@ class Sandbox:
         except subprocess.TimeoutExpired as error:
             self.close()
             output = error.stdout or ""
-            return {"text": output + "\n[exit code: -1] [timed out]", "valid": True, "episode_limit": True}
+            return {
+                "text": output + "\n[exit code: -1] [timed out]",
+                "valid": True,
+                "episode_limit": True,
+            }
 
     def view_image(self, path: str) -> dict[str, Any]:
         if self.steps >= MAX_STEPS:
@@ -139,11 +153,25 @@ class Sandbox:
             return {"reward": 0.0, "infrastructure_error": True}
         try:
             result = self._host(
-                ["docker", "exec", "--user", "0", "--workdir", "/workspace", self.name, "/bin/bash", "-lc", verifier],
+                [
+                    "docker",
+                    "exec",
+                    "--user",
+                    "0",
+                    "--workdir",
+                    "/workspace",
+                    self.name,
+                    "/bin/bash",
+                    "-lc",
+                    verifier,
+                ],
                 timeout=int(self.config.get("verifier_timeout_s", 300)),
                 check=False,
             )
-            return {"reward": float(result.returncode == 0), "verifier_output": result.stdout[-4000:]}
+            return {
+                "reward": float(result.returncode == 0),
+                "verifier_output": result.stdout[-4000:],
+            }
         except subprocess.TimeoutExpired:
             return {"reward": 0.0, "infrastructure_error": True}
         finally:
@@ -152,13 +180,23 @@ class Sandbox:
     def close(self) -> None:
         if self.closed:
             return
-        subprocess.run(["docker", "rm", "-f", self.name], text=True, capture_output=True, check=False)
+        subprocess.run(
+            ["docker", "rm", "-f", self.name], text=True, capture_output=True, check=False
+        )
         self.closed = True
 
     @staticmethod
-    def _host(command: list[str], timeout: int = 120, *, check: bool = True) -> subprocess.CompletedProcess[str]:
+    def _host(
+        command: list[str], timeout: int = 120, *, check: bool = True
+    ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            command, text=True, encoding="utf-8", errors="replace", capture_output=True, timeout=timeout, check=check
+            command,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            timeout=timeout,
+            check=check,
         )
 
 
@@ -205,7 +243,9 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                         sandbox.bash, arguments.get("command", ""), arguments.get("timeout_s", 120)
                     )
                 elif message.get("tool") == "view_image":
-                    response = await asyncio.to_thread(sandbox.view_image, arguments.get("path", ""))
+                    response = await asyncio.to_thread(
+                        sandbox.view_image, arguments.get("path", "")
+                    )
                 else:
                     response = {"text": "Unknown tool.", "valid": False}
                 await websocket.send_json(response)
