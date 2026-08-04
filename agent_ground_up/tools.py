@@ -53,9 +53,7 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "bash",
-            "description": (
-                "Run a bash command in the workspace and return combined output plus its exit code."
-            ),
+            "description": "Run a bash command in the workspace and return combined output plus its exit code.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -75,13 +73,11 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "view_image",
-            "description": (
-                "Open an image file from the workspace and show it to the multimodal model."
-            ),
+            "description": "Open an image file from the workspace and show it to the multimodal model.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "Path relative to the workspace."}
+                    "path": {"type": "string", "description": "Path relative to the workspace."},
                 },
                 "required": ["path"],
                 "additionalProperties": False,
@@ -100,12 +96,10 @@ class Toolbox:
         *,
         max_output_tokens: int = 8192,
         token_counter: Callable[[str], int] | None = None,
-        max_image_bytes: int = 20 * 1024 * 1024,
     ) -> None:
         self.workdir = Path(workdir).expanduser().resolve()
         self.max_output_tokens = max_output_tokens
         self.token_counter = token_counter or (lambda text: len(text.encode("utf-8")))
-        self.max_image_bytes = max_image_bytes
 
     def bash(self, command: str, timeout_s: int = 120) -> ToolResult:
         """Run a command in the workspace.
@@ -117,20 +111,19 @@ class Toolbox:
         Returns:
             Combined stdout/stderr, exit code, and timeout metadata.
         """
-        if not 1 <= timeout_s <= 3600:
-            return ToolResult("bash: timeout_s must be between 1 and 3600", 2)
-
         process = subprocess.Popen(
-            command,
-            shell=True,
-            executable="/bin/bash",
-            cwd=self.workdir,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
+            command,  # you want to run something, right?
+            shell=True,  # but this is python, it can't run anything by itself,
+            # it needs to go through a shell
+            executable="/bin/bash",  # what program do you want to run in your shell
+            cwd=self.workdir,  # and where?
+            text=True,  # stdout is bytes by default, we want text instead
+            encoding="utf-8",  # how do you want your text, then?
+            errors="replace",  # what if you can't decode the text? don't crash replace with <?>.
+            stdout=subprocess.PIPE,  # capture stdout instead of default projecting it to screen
+            stderr=subprocess.STDOUT,  # merge stderr into stdout, that way we get both
+            start_new_session=True,  # create a dedicated process group \
+            # that way timeout/kills don't leave orphans.
         )
         timed_out = False
         try:
@@ -156,8 +149,6 @@ class Toolbox:
         if not image_path.is_relative_to(self.workdir):
             raise ValueError("Image must be inside the workspace")
         size = image_path.stat().st_size
-        if size > self.max_image_bytes:
-            raise ValueError(f"Image exceeds {self.max_image_bytes} bytes")
         with Image.open(image_path) as image:
             image.verify()
             width, height = image.size
