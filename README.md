@@ -41,10 +41,11 @@ Run the evolutionary smoke loop against the configured model endpoint:
 ```bash
 uv run python evolve.py \
   --curriculum evolution_tasks/smoke_curriculum.json \
-  --rounds 3
+  --rounds 3 \
+  --unsafe-local
 ```
 
-See `video/README.md` for what to implement from memory and what should be prepared off-camera.
+The bundled local candidate runner is intentionally gated by `--unsafe-local`: candidate Python itself is self-modified and therefore executes on the host. Use it only for the trusted smoke curriculum; serious runs should move the whole candidate process into an external/container sandbox.\n\nSee `video/README.md` for what to implement from memory and what should be prepared off-camera.
 
 ---
 
