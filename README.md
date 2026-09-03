@@ -1,3 +1,59 @@
+# Agent Ground Up — self-evolving kernel
+
+The main research object is now a **recursively specializing agent**, not just a coding-agent
+harness. Starting from the same frozen model, it selects a task family near its capability frontier,
+mutates its own agent/tools/memory/skills/improvement policy, evaluates descendants on held-out
+siblings, and retains a population archive rather than greedily overwriting the parent.
+
+```text
+task-family frontier
+        ↓
+population archive → descendant mutation → train evidence
+        ↑                                  ↓
+        └──────── held-out evaluation ─────┘
+```
+
+Core additions:
+
+- `memory.py`: append-only lifetime memory with bounded wake context, raw recall, and zoomable
+  hierarchical summaries.
+- `skills.py`: persistent generated skills that execute through the same workspace bash boundary.
+- `tasks.py`: task families and frontier curriculum.
+- `evaluate.py`: explicit train/held-out evaluation and a local candidate runner.
+- `archive.py`: immutable descendant snapshots with performance + novelty/exploration selection.
+- `improve.py` + `evolve.py`: DGM-style select → mutate → evaluate → archive loop.
+- `improvement_policy.md`: **editable by descendants**, so selected children change how future
+  children are produced while the external held-out evaluator remains fixed.
+- `video/`: exact on-camera implementation boundary. Tests and infrastructure stay off-camera.
+- `learning/`: reconstruction drills, seed retrieval cards, and a LazyVim FSRS configuration.
+- `evolution_tasks/smoke_curriculum.json`: tiny end-to-end smoke curriculum.
+
+Run the new focused tests:
+
+```bash
+uv run pytest -q \
+  tests/test_memory.py tests/test_skills.py tests/test_tasks.py \
+  tests/test_evaluate.py tests/test_archive.py tests/test_improve.py tests/test_agent_memory.py
+```
+
+Run the evolutionary smoke loop against the configured model endpoint:
+
+```bash
+uv run python evolve.py \
+  --curriculum evolution_tasks/smoke_curriculum.json \
+  --rounds 3
+```
+
+See `video/README.md` for what to implement from memory and what should be prepared off-camera.
+
+---
+
+## Previous inference/training extension
+
+The existing SFT → verifier-RL → merge/quantization stack is deliberately retained as an extension.
+It is useful for later weight-level adaptation, but it is not part of the code you should memorize
+or type during the self-evolving-agent videos.
+
 # Agent Ground Up
 
 Building an agentic harness and training the associated LLM. Mostly inspired from [mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent) and [codex](https://github.com/openai/codex).

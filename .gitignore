@@ -5,4 +5,6 @@ __pycache__/
 *.egg-info/
 runs/
 outputs/
+state/
+skills/
 mini-swe-agent/
