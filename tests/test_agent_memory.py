@@ -76,5 +76,5 @@ def test_agent_exposes_persistent_memory_and_skill_tools(tmp_path: Path) -> None
     tool_names = {
         schema["function"]["name"] for schema in client.chat.completions.calls[0]["tools"]
     }
-    assert {"bash", "view_image", "remember", "recall", "zoom", "skill"} <= tool_names
+    assert {"bash", "view_image", "remember", "recall", "zoom", "create_skill", "skill"} <= tool_names
     assert "hello" in agent.messages[-2]["content"]
