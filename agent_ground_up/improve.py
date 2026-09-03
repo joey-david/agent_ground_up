@@ -82,22 +82,27 @@ class SelfImprover:
             self.bootstrap(source_root, family)
         parent = self.archive.select_parent(family=family.name)
         parent_path = self.archive.root / parent.id
-        parent_report = self.evaluator.evaluate(parent_path, family, "heldout")
+        parent_train_report = self.evaluator.evaluate(parent_path, family, "train")
+        parent_heldout_report = self.evaluator.evaluate(parent_path, family, "heldout")
 
         with tempfile.TemporaryDirectory(prefix="agent-descendant-") as temp:
             worktree = Path(temp)
             self.archive.materialize(parent.id, worktree)
             before = self.archive.fingerprint(worktree)
-            note = self.mutator.mutate(worktree, family, parent_report, self.memory.wake())
+            note = self.mutator.mutate(
+                worktree, family, parent_train_report, self.memory.wake()
+            )
             after = self.archive.fingerprint(worktree)
             if before == after:
-                return self._rejected(parent, family, parent_report, note, "no source change")
+                return self._rejected(
+                    parent, family, parent_heldout_report, note, "no source change"
+                )
 
             train_report = self.evaluator.evaluate(worktree, family, "train")
             heldout_report = self.evaluator.evaluate(worktree, family, "heldout")
             valid = min(train_report.valid_rate, heldout_report.valid_rate) >= self.min_valid_rate
             noncatastrophic = (
-                heldout_report.mean_score + self.regression_tolerance >= parent_report.mean_score
+                heldout_report.mean_score + self.regression_tolerance >= parent_heldout_report.mean_score
             )
             accepted = valid and noncatastrophic
             reason = (
@@ -133,7 +138,7 @@ class SelfImprover:
                 family=family.name,
                 parent_id=parent.id,
                 child_id=child.id if child else None,
-                parent_score=parent_report.mean_score,
+                parent_score=parent_heldout_report.mean_score,
                 train_score=train_report.mean_score,
                 heldout_score=heldout_report.mean_score,
                 accepted=accepted,
@@ -225,9 +230,9 @@ Current self-improvement policy (editable by you):
 
 Capability family: {family.name}
 Description: {family.description}
-Current held-out score: {parent_report.mean_score:.3f}
+Current train score: {parent_report.mean_score:.3f}
 
-Per-case evidence:
+Training-case evidence:
 {failures}
 
 Persistent discoveries:
