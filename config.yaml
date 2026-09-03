@@ -1,9 +1,9 @@
 model:
-    processor: Qwen/Qwen3.6-27B
-    served_name: Qwen/Qwen3.6-27B
-    base_url: http://127.0.0.1:8036/v1
-    api_key_env: API_KEY
-    context_window: 32768
+  processor: Qwen/Qwen3.6-27B
+  served_name: Qwen/Qwen3.6-27B
+  base_url: http://127.0.0.1:8036/v1
+  api_key_env: API_KEY
+  context_window: 32768
 
 agent:
   workdir: .
@@ -14,6 +14,11 @@ agent:
   max_tool_output_tokens: 8192
   max_steps: 128
   wall_time_s: 3600
+  memory_dir: state/memory
+  wake_records: 6
+  memory_leaf_size: 8
+  memory_summary_chars: 500
+  skills_dir: skills
 
 ui:
   max_lines: 40
