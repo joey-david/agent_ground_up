@@ -28,6 +28,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--archive", default="state/archive")
     parser.add_argument("--memory", default="state/evolution-memory")
     parser.add_argument("--repository-root", default=".")
+    parser.add_argument(
+        "--unsafe-local",
+        action="store_true",
+        help="allow candidate Python to execute on the host; smoke tests only",
+    )
     return parser.parse_args()
 
 
@@ -65,6 +70,11 @@ def build_edit_agent(config_path: str | Path):
 
 def main() -> None:
     args = parse_args()
+    if not args.unsafe_local:
+        raise SystemExit(
+            "Refusing to execute self-modified candidate Python on the host. "
+            "Use --unsafe-local only for the bundled trusted smoke curriculum."
+        )
     repository_root = Path(args.repository_root).expanduser().resolve()
     config_path = Path(args.config).expanduser().resolve()
     families = load_families(args.curriculum)
