@@ -80,23 +80,45 @@ MEMORY_TOOL_SCHEMAS = [
     },
 ]
 
-SKILL_TOOL_SCHEMA = {
-    "type": "function",
-    "function": {
-        "name": "skill",
-        "description": "Run one persistent generated skill by name inside the workspace.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "name": {"type": "string"},
-                "argument": {"type": "string", "default": ""},
-                "timeout_s": {"type": "integer", "default": 120},
+SKILL_TOOL_SCHEMAS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "create_skill",
+            "description": "Persist a reusable shell procedure as a generated skill.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "description": {"type": "string"},
+                    "script": {
+                        "type": "string",
+                        "description": "Shell source defining main(), which receives one argument.",
+                    },
+                },
+                "required": ["name", "description", "script"],
+                "additionalProperties": False,
             },
-            "required": ["name"],
-            "additionalProperties": False,
         },
     },
-}
+    {
+        "type": "function",
+        "function": {
+            "name": "skill",
+            "description": "Run one persistent generated skill by name inside the workspace.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "argument": {"type": "string", "default": ""},
+                    "timeout_s": {"type": "integer", "default": 120},
+                },
+                "required": ["name"],
+                "additionalProperties": False,
+            },
+        },
+    },
+]
 
 
 @dataclass(slots=True)
@@ -202,7 +224,7 @@ class Agent:
         if self.memory is not None:
             schemas.extend(MEMORY_TOOL_SCHEMAS)
         if self.skills is not None:
-            schemas.append(SKILL_TOOL_SCHEMA)
+            schemas.extend(SKILL_TOOL_SCHEMAS)
         return schemas
 
     def _complete(
@@ -251,6 +273,11 @@ class Agent:
                 )
             elif name == "zoom" and self.memory is not None:
                 content = self.memory.zoom(arguments["node_id"])
+            elif name == "create_skill" and self.skills is not None:
+                skill = self.skills.register(
+                    arguments["name"], arguments["description"], arguments["script"]
+                )
+                content = f"created skill {skill.name}"
             elif name == "skill" and self.skills is not None:
                 result = self.skills.run(
                     arguments["name"],
@@ -260,7 +287,7 @@ class Agent:
                 )
                 content = result.as_text()
             else:
-                raise ValueError(f"unknown or unavailable tool: {name}")
+                raise ValueError(f"unknown tool: {name}")
             self.valid_tool_calls += 1
         except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError, re.error) as error:
             self.invalid_tool_calls += 1
