@@ -61,7 +61,7 @@ class Evaluator:
 
 
 class LocalCodingRunner:
-    """Run an archived candidate on a copied task workspace, then execute its verifier."""
+    """Development-only runner. Candidate Python executes on the host; use only for trusted smoke tests."""
 
     def __init__(
         self,
