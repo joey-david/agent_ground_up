@@ -38,9 +38,10 @@ class ConstantMemory:
         wake_records: int = 6,
         leaf_size: int = 8,
         summary_chars: int = 500,
+        record_chars: int = 1200,
         summarizer: SummaryFn | None = None,
     ) -> None:
-        if wake_records < 0 or leaf_size < 1 or summary_chars < 80:
+        if wake_records < 0 or leaf_size < 1 or summary_chars < 80 or record_chars < 80:
             raise ValueError("invalid memory sizing")
         self.root = Path(root).expanduser().resolve()
         self.root.mkdir(parents=True, exist_ok=True)
@@ -49,6 +50,7 @@ class ConstantMemory:
         self.wake_records = wake_records
         self.leaf_size = leaf_size
         self.summary_chars = summary_chars
+        self.record_chars = record_chars
         self.summarizer = summarizer or self._default_summary
 
     def remember(self, text: str, tags: Iterable[str] = ()) -> MemoryRecord:
@@ -56,6 +58,9 @@ class ConstantMemory:
         text = text.strip()
         if not text:
             raise ValueError("memory text cannot be empty")
+        if len(text) > self.record_chars:
+            half = max(1, (self.record_chars - 5) // 2)
+            text = text[:half].rstrip() + " ... " + text[-half:].lstrip()
         records = self.records()
         record = MemoryRecord(
             id=len(records),
