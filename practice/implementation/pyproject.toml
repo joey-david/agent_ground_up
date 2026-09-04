@@ -1,0 +1,12 @@
+[project]
+name = "<fill>"
+version = "0.0.0"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = []
+train = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

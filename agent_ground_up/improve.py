@@ -57,7 +57,6 @@ class SelfImprover:
         self.regression_tolerance = regression_tolerance
 
     def bootstrap(self, source_root: str | Path, family: TaskFamily) -> ArchiveEntry:
-        """Seed the population with the current general-purpose agent."""
         report = self.evaluator.evaluate(source_root, family, "heldout")
         self.curriculum.record(family.name, report.mean_score)
         entry = self.archive.add(
@@ -69,8 +68,7 @@ class SelfImprover:
             note="frozen baseline",
         )
         self.memory.remember(
-            f"Bootstrap {family.name}: held-out score={report.mean_score:.3f}, "
-            f"valid={report.valid_rate:.3f}.",
+            f"Bootstrap {family.name}: held-out score={report.mean_score:.3f}, valid={report.valid_rate:.3f}.",
             tags=("evaluation", family.name),
         )
         return entry
@@ -89,27 +87,17 @@ class SelfImprover:
             worktree = Path(temp)
             self.archive.materialize(parent.id, worktree)
             before = self.archive.fingerprint(worktree)
-            note = self.mutator.mutate(
-                worktree, family, parent_train_report, self.memory.wake()
-            )
+            note = self.mutator.mutate(worktree, family, parent_train_report, self.memory.wake())
             after = self.archive.fingerprint(worktree)
             if before == after:
-                return self._rejected(
-                    parent, family, parent_heldout_report, note, "no source change"
-                )
+                return self._rejected(parent, family, parent_heldout_report, note, "no source change")
 
             train_report = self.evaluator.evaluate(worktree, family, "train")
             heldout_report = self.evaluator.evaluate(worktree, family, "heldout")
             valid = min(train_report.valid_rate, heldout_report.valid_rate) >= self.min_valid_rate
-            noncatastrophic = (
-                heldout_report.mean_score + self.regression_tolerance >= parent_heldout_report.mean_score
-            )
+            noncatastrophic = heldout_report.mean_score + self.regression_tolerance >= parent_heldout_report.mean_score
             accepted = valid and noncatastrophic
-            reason = (
-                "archived valid descendant"
-                if accepted
-                else self._failure_reason(valid, noncatastrophic)
-            )
+            reason = "archived valid descendant" if accepted else self._failure_reason(valid, noncatastrophic)
             child: ArchiveEntry | None = None
             if valid:
                 child = self.archive.add(
@@ -122,16 +110,7 @@ class SelfImprover:
                 )
             self.curriculum.record(family.name, heldout_report.mean_score)
             self.memory.remember(
-                self._memory_line(
-                    family,
-                    parent,
-                    child,
-                    train_report,
-                    heldout_report,
-                    accepted,
-                    reason,
-                    note,
-                ),
+                self._memory_line(family, parent, child, train_report, heldout_report, accepted, reason, note),
                 tags=("self-improvement", family.name),
             )
             return ImprovementRound(
@@ -219,10 +198,8 @@ class PromptMutator:
             f"- {case.case_id}: score={case.score:.3f} valid={case.valid} {case.details}"
             for case in parent_report.cases
         )
-        policy_path = worktree / "improvement_policy.md"
-        policy = (
-            policy_path.read_text(encoding="utf-8") if policy_path.exists() else "(no policy file)"
-        )
+        policy_path = worktree / "agent_ground_up" / "improvement_policy.md"
+        policy = policy_path.read_text(encoding="utf-8") if policy_path.exists() else "(no policy file)"
         prompt = f"""You are improving your own agent implementation.
 
 Current self-improvement policy (editable by you):
