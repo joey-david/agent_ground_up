@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from openai import OpenAI
-from transformers import AutoProcessor
 
 from .config import secret
 from .runtime import ContinuousResponsesRuntime
@@ -26,6 +25,8 @@ def build_model_runtime(model_config: dict[str, Any]) -> ModelRuntimeBundle:
     )
     mode = model_config.get("runtime", "chat_completions")
     if mode == "chat_completions":
+        from transformers import AutoProcessor
+
         processor_name = model_config.get("processor")
         if not processor_name:
             raise ValueError("chat_completions runtime requires model.processor")
