@@ -28,18 +28,20 @@ class ExperienceLog:
         self.root = Path(root).expanduser().resolve()
         self.root.mkdir(parents=True, exist_ok=True)
         self.path = self.root / "history.jsonl"
+        self._next_id = self._initial_count()
 
     def append(self, kind: str, payload: Any) -> ExperienceEvent:
         if not kind.strip():
             raise ValueError("experience kind cannot be empty")
         event = ExperienceEvent(
-            id=self.count(),
+            id=self._next_id,
             kind=kind.strip(),
             payload=self._sanitize(payload),
             created_at=datetime.now(timezone.utc).isoformat(),
         )
         with self.path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(asdict(event), ensure_ascii=False) + "\n")
+        self._next_id += 1
         return event
 
     def events(self) -> list[ExperienceEvent]:
@@ -52,10 +54,7 @@ class ExperienceLog:
         return result
 
     def count(self) -> int:
-        if not self.path.exists():
-            return 0
-        with self.path.open("r", encoding="utf-8") as handle:
-            return sum(1 for line in handle if line.strip())
+        return self._next_id
 
     def search(self, pattern: str, *, limit: int = 12) -> list[ExperienceEvent]:
         if limit < 1:
@@ -83,6 +82,12 @@ class ExperienceLog:
             f"#{event.id} [{event.kind}] {json.dumps(event.payload, ensure_ascii=False)}"
             for event in events
         )
+
+    def _initial_count(self) -> int:
+        if not self.path.exists():
+            return 0
+        with self.path.open("r", encoding="utf-8") as handle:
+            return sum(1 for line in handle if line.strip())
 
     @classmethod
     def _sanitize(cls, value: Any) -> Any:
