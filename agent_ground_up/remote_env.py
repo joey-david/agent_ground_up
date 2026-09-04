@@ -10,7 +10,7 @@ from urllib.parse import urlparse, urlunparse
 
 from PIL import Image
 
-from .config import load_config, secret, section
+from .config import DEFAULT_CONFIG, load_config, secret, section
 
 
 class RemoteCodingEnv:
@@ -47,27 +47,10 @@ class RemoteCodingEnv:
         return response.get("observation")
 
     def bash(self, command: str, timeout_s: int = 120) -> str:
-        """Run a command in the remote disposable workspace.
-
-        Args:
-            command: Bash source to execute.
-            timeout_s: Maximum runtime in seconds.
-
-        Returns:
-            Combined output and exit status from the sandbox.
-        """
         response = self._step("bash", {"command": command, "timeout_s": timeout_s})
         return response["text"]
 
     def view_image(self, path: str) -> list[dict[str, Any]]:
-        """Show an image from the remote disposable workspace.
-
-        Args:
-            path: Image path relative to the workspace.
-
-        Returns:
-            Multimodal image and text content blocks.
-        """
         response = self._step("view_image", {"path": path})
         image = Image.open(io.BytesIO(base64.b64decode(response["image_base64"]))).copy()
         return [{"type": "image", "image": image}, {"type": "text", "text": response["text"]}]
@@ -124,7 +107,6 @@ class RemoteCodingEnv:
 
 
 def remote_reward(environments: list[RemoteCodingEnv], **_: Any) -> list[float | None]:
-    """Return verifier rewards; None masks infrastructure failures."""
     return [environment._score() for environment in environments]
 
 
@@ -132,7 +114,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Smoke-test the remote coding environment")
     parser.add_argument("task_id")
     parser.add_argument("--command", default="pwd && find . -maxdepth 2 -type f -print")
-    parser.add_argument("--config", default=os.getenv("AGENT_CONFIG", "config.yaml"))
+    parser.add_argument("--config", default=os.getenv("AGENT_CONFIG", str(DEFAULT_CONFIG)))
     args = parser.parse_args()
     os.environ["AGENT_CONFIG"] = str(args.config)
     environment = RemoteCodingEnv()

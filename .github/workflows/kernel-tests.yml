@@ -26,11 +26,14 @@ jobs:
           test ! -e attempt_2
           test ! -e requirements.txt
           test ! -e config.yaml
+          test ! -e todo.md
           test -e configs/lamgate.yaml
           test -e scripts/run.py
-          test -e practice/README.md
-      - name: Compile kernel
-        run: python -m compileall -q agent_ground_up scripts infra
+          test -e scripts/train.py
+          test -e practice/implementation/kernel/agent.py
+          test -e practice/signatures/kernel/agent.py
+      - name: Compile reference and practice harnesses
+        run: python -m compileall -q agent_ground_up scripts infra practice
       - name: Run focused kernel tests
         run: |
           pytest -q \

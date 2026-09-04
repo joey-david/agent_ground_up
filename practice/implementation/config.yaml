@@ -1,0 +1,22 @@
+model:
+  runtime: "<fill>"
+  served_name: "<fill>"
+  base_url: "<fill>"
+  context_window: 0
+
+agent:
+  max_steps: 0
+  max_output_tokens: 0
+  max_tool_output_tokens: 0
+  memory_dir: "<fill>"
+  experience_dir: "<fill>"
+  skills_dir: "<fill>"
+
+evolution:
+  target: 0.0
+  regression_tolerance: 0.0
+
+training:
+  epsilon_low: 0.0
+  epsilon_high: 0.0
+  beta: 0.0
