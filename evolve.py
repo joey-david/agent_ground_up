@@ -6,13 +6,11 @@ import os
 from dataclasses import asdict
 from pathlib import Path
 
-from openai import OpenAI
-from transformers import AutoProcessor
-
 from agent_ground_up.agent import Agent
 from agent_ground_up.archive import Archive
-from agent_ground_up.config import load_config, secret, section
+from agent_ground_up.config import load_config, section
 from agent_ground_up.evaluate import Evaluator, LocalCodingRunner
+from agent_ground_up.factory import build_model_runtime
 from agent_ground_up.improve import PromptMutator, SelfImprover
 from agent_ground_up.memory import ConstantMemory
 from agent_ground_up.tasks import Curriculum, load_families
@@ -40,28 +38,30 @@ def build_edit_agent(config_path: str | Path):
     config = load_config(config_path)
     model_config = section(config, "model")
     agent_config = section(config, "agent")
-    processor = AutoProcessor.from_pretrained(model_config["processor"], trust_remote_code=False)
-    client = OpenAI(base_url=model_config["base_url"], api_key=secret(model_config, "api_key_env"))
-
-    def token_counter(text: str) -> int:
-        return len(processor.tokenizer.encode(text, add_special_tokens=False))
+    bundle = build_model_runtime(model_config)
 
     def edit_agent(worktree: Path, prompt: str) -> str:
+        # A native Responses runtime holds per-run state, so construct a fresh bundle for each
+        # descendant mutation rather than leaking one candidate's cognition into another.
+        local_bundle = (
+            build_model_runtime(model_config) if bundle.runtime is not None else bundle
+        )
         agent = Agent(
-            client,
+            local_bundle.client,
             model_config["served_name"],
             Toolbox(
                 worktree,
                 max_output_tokens=agent_config["max_tool_output_tokens"],
-                token_counter=token_counter,
+                token_counter=local_bundle.token_counter,
             ),
-            processor,
+            local_bundle.processor,
             context_window=model_config["context_window"],
             compact_at=agent_config["compact_at"],
             recent_user_tokens=agent_config["recent_user_tokens"],
             max_output_tokens=agent_config["max_output_tokens"],
             max_steps=agent_config["max_steps"],
             wall_time_s=agent_config["wall_time_s"],
+            runtime=local_bundle.runtime,
         )
         return agent.run(prompt).answer
 
