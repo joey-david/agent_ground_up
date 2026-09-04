@@ -30,6 +30,18 @@
 - Why do generated skills execute through the same bash boundary rather than a privileged path?
 - When should repeated reasoning be converted into a skill rather than another memory?
 
+## LM policy dynamics
+
+- For a causal LM, which logit position predicts completion token `t`, and why is a one-token shift required?
+- Starting from logits `[B,T,V]`, derive the exact tensor operations that produce chosen-token log-probs `[B,C]`.
+- Why does `old_logps = logps.detach()` produce a ratio numerically equal to one but still allow a policy gradient?
+- Derive `r_t = exp(log pi_theta - log pi_old)` and explain why clipping is asymmetric when `epsilon_low != epsilon_high`.
+- For positive vs negative advantage, which side of the trust region becomes active and why?
+- Why does DAPO normalize over active tokens in the accumulated batch instead of averaging each response separately?
+- Derive the sampled reverse-KL estimator `exp(ref_logp - logp) - (ref_logp - logp) - 1` and identify its minimum.
+- Which tensors must be detached, and which must retain gradient, for the RL update to actually change the LM?
+- Drill: blank `loss.py` → implement causal shift, gather chosen-token log-probs, clipping, KL, mask, and `backward()` with `test_loss.py` green.
+
 ## Evaluation and self-improvement
 
 - Why must a task be a family with unseen sibling instances rather than one fixed task?
@@ -42,4 +54,4 @@
 
 ## Full rebuild
 
-- Drill: empty directory → tools + agent + memory + skills + task/eval/archive/improve; all focused tests green with zero source peeks.
+- Drill: empty directory → tools + agent + memory + skills + manual loss + task/eval/archive/improve; all focused tests green with zero source peeks.

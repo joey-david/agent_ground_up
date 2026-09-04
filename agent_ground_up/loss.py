@@ -5,6 +5,32 @@ from typing import Any
 import torch
 
 
+def completion_logps_from_logits(
+    logits: torch.Tensor,
+    input_ids: torch.Tensor,
+    completion_length: int,
+) -> torch.Tensor:
+    """Turn causal-LM logits into log p(token_t | tokens_<t>) for completion tokens.
+
+    This is intentionally explicit for the teaching path: shift the causal predictions by one,
+    take log-softmax over the vocabulary, then gather the probability assigned to the token that
+    was actually sampled.
+    """
+    if logits.ndim != 3 or input_ids.ndim != 2:
+        raise ValueError("expected logits [B,T,V] and input_ids [B,T]")
+    if logits.shape[:2] != input_ids.shape:
+        raise ValueError("logits and input_ids must share batch/sequence dimensions")
+    if completion_length < 1 or completion_length >= input_ids.shape[1]:
+        raise ValueError("completion_length must leave at least one conditioning token")
+
+    # Logit at position t predicts token t+1. The final C completion tokens are therefore
+    # predicted by the C logits immediately preceding them.
+    completion_logits = logits[:, -completion_length - 1 : -1, :].float()
+    completion_ids = input_ids[:, -completion_length:]
+    log_probs = completion_logits.log_softmax(dim=-1)
+    return log_probs.gather(-1, completion_ids.unsqueeze(-1)).squeeze(-1)
+
+
 def dapo_loss(
     logps: torch.Tensor,
     old_logps: torch.Tensor,
@@ -17,16 +43,35 @@ def dapo_loss(
     ref_logps: torch.Tensor | None = None,
     beta: float = 0.0,
     sampling_ratio: torch.Tensor | None = None,
+    ratio_level: str = "token",
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-    """Clipped sequence-ratio policy loss with DAPO token normalization."""
+    """Manual clipped DAPO/GRPO policy objective with global active-token normalization.
+
+    Gradient path:
+        model logits -> chosen-token log p -> pi_theta/pi_old -> clipped advantage -> loss.
+
+    `ratio_level="token"` is the direct DAPO-style teaching path. `"sequence"` remains available
+    for experiments that average the log-ratio over a whole completion before clipping.
+    """
+    if logps.shape != old_logps.shape or logps.shape != mask.shape:
+        raise ValueError("logps, old_logps, and mask must have the same [B,T] shape")
+    if ratio_level not in {"token", "sequence"}:
+        raise ValueError("ratio_level must be 'token' or 'sequence'")
+
     mask = mask.to(logps.dtype)
-    advantages = advantages.reshape(-1, 1)
-    token_counts = mask.sum(dim=1, keepdim=True).clamp_min(1.0)
-    log_ratio = ((logps - old_logps) * mask).sum(dim=1, keepdim=True) / token_counts
+    advantages = advantages.reshape(-1, 1).to(logps.dtype)
+    log_ratio_per_token = logps - old_logps
+
+    if ratio_level == "token":
+        log_ratio = log_ratio_per_token
+    else:
+        token_counts = mask.sum(dim=1, keepdim=True).clamp_min(1.0)
+        log_ratio = (log_ratio_per_token * mask).sum(dim=1, keepdim=True) / token_counts
+
     ratio = log_ratio.exp()
     clipped_ratio = ratio.clamp(1.0 - epsilon_low, 1.0 + epsilon_high)
     surrogate = torch.minimum(ratio * advantages, clipped_ratio * advantages)
-    per_token_loss = -surrogate.expand_as(logps)
+    per_token_loss = -surrogate
 
     if sampling_ratio is not None:
         if sampling_ratio.dim() == 1:
@@ -36,6 +81,7 @@ def dapo_loss(
     if beta:
         if ref_logps is None:
             raise ValueError("ref_logps are required when beta is non-zero")
+        # Sampled reverse-KL estimator used by GRPO-family objectives.
         reverse_log_ratio = ref_logps - logps
         per_token_kl = reverse_log_ratio.exp() - reverse_log_ratio - 1.0
         per_token_loss = per_token_loss + beta * per_token_kl
@@ -56,6 +102,7 @@ def dapo_loss(
 
 
 def build_dapo_trainer() -> type[Any]:
+    """Thin TRL bridge: TRL handles rollout/batching; our code owns the LM forward and loss."""
     from trl import GRPOTrainer
 
     class DAPOTrainer(GRPOTrainer):
@@ -69,28 +116,40 @@ def build_dapo_trainer() -> type[Any]:
                 if "tool_mask" not in inputs
                 else completion_mask * inputs["tool_mask"]
             )
-            logps, _, _ = self._get_per_token_logps_and_entropies(
-                model,
-                input_ids,
-                attention_mask,
-                completion_ids.size(1),
-                compute_entropy=False,
-                compute_aux_loss=False,
-                pixel_values=inputs.get("pixel_values"),
-                image_grid_thw=inputs.get("image_grid_thw"),
-                num_images=inputs.get("num_images"),
-                pixel_attention_mask=inputs.get("pixel_attention_mask"),
-                spatial_shapes=inputs.get("spatial_shapes"),
-                num_tiles=inputs.get("num_tiles"),
-                image_sizes=inputs.get("image_sizes"),
-                token_type_ids=inputs.get("token_type_ids"),
-                mm_token_type_ids=inputs.get("mm_token_type_ids"),
-                image_position_ids=inputs.get("image_position_ids"),
-            )
+
+            model_inputs: dict[str, Any] = {
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
+            }
+            for key in (
+                "pixel_values",
+                "image_grid_thw",
+                "num_images",
+                "pixel_attention_mask",
+                "spatial_shapes",
+                "num_tiles",
+                "image_sizes",
+                "token_type_ids",
+                "mm_token_type_ids",
+                "image_position_ids",
+            ):
+                if key in inputs:
+                    model_inputs[key] = inputs[key]
+
+            # No hidden trainer helper here: run the causal LM, then explicitly recover the
+            # log-probability assigned to every sampled completion token.
+            outputs = model(**model_inputs)
+            logps = completion_logps_from_logits(outputs.logits, input_ids, completion_ids.size(1))
             old_logps = inputs.get("old_per_token_logps")
             if old_logps is None:
                 old_logps = logps.detach()
+
             normalizer = inputs["num_items_in_batch"] / self.accelerator.num_processes
+            ratio_level = getattr(
+                self,
+                "importance_sampling_level",
+                getattr(self.args, "importance_sampling_level", "token"),
+            )
             loss, metrics = dapo_loss(
                 logps,
                 old_logps,
@@ -102,6 +161,7 @@ def build_dapo_trainer() -> type[Any]:
                 ref_logps=inputs.get("ref_per_token_logps"),
                 beta=self.beta,
                 sampling_ratio=inputs.get("importance_sampling_ratio"),
+                ratio_level=ratio_level,
             )
             mode = "train" if model.training else "eval"
             for name, value in metrics.items():

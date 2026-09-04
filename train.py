@@ -111,7 +111,7 @@ def run_rl(config: dict[str, Any]) -> None:
         vllm_mode="server",
         vllm_server_base_url=values["vllm_url"],
         loss_type="dapo",
-        importance_sampling_level="sequence",
+        importance_sampling_level="token",
         scale_rewards="batch",
         mask_truncated_completions=True,
         beta=values["beta"],

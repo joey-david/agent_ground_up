@@ -18,9 +18,10 @@ jobs:
       - name: Install lightweight runtime/test dependencies
         run: |
           python -m pip install --upgrade pip
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.6"
           python -m pip install "openai>=3.8" "pillow>=10" "pyyaml>=6" "rich>=13" "pytest>=8"
       - name: Compile kernel
-        run: python -m compileall -q agent_ground_up run.py evolve.py
+        run: python -m compileall -q agent_ground_up run.py evolve.py train.py
       - name: Run focused kernel tests
         run: |
           pytest -q \
@@ -31,6 +32,7 @@ jobs:
             tests/test_memory.py \
             tests/test_experience.py \
             tests/test_skills.py \
+            tests/test_loss.py \
             tests/test_tasks.py \
             tests/test_evaluate.py \
             tests/test_archive.py \
