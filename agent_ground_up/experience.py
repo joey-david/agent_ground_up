@@ -62,6 +62,8 @@ class ExperienceLog:
         regex = re.compile(pattern, flags=re.IGNORECASE)
         matches: list[ExperienceEvent] = []
         for event in reversed(self.events()):
+            if self._is_retrieval_query(event):
+                continue
             searchable = f"{event.kind} {json.dumps(event.payload, ensure_ascii=False)}"
             if regex.search(searchable):
                 matches.append(event)
@@ -88,6 +90,14 @@ class ExperienceLog:
             return 0
         with self.path.open("r", encoding="utf-8") as handle:
             return sum(1 for line in handle if line.strip())
+
+    @staticmethod
+    def _is_retrieval_query(event: ExperienceEvent) -> bool:
+        return (
+            event.kind == "tool_call"
+            and isinstance(event.payload, dict)
+            and event.payload.get("name") in {"search_history", "read_history"}
+        )
 
     @classmethod
     def _sanitize(cls, value: Any) -> Any:
