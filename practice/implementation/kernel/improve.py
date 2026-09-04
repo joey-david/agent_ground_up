@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from .archive import Archive
+from .archive import Archive, ArchiveEntry
 from .evaluate import EvalReport, Evaluator
 from .memory import ConstantMemory
 from .tasks import Curriculum, TaskFamily
@@ -47,7 +47,7 @@ class SelfImprover:
     ) -> None:
         raise NotImplementedError
 
-    def bootstrap(self, source_root: str | Path, family: TaskFamily):
+    def bootstrap(self, source_root: str | Path, family: TaskFamily) -> ArchiveEntry:
         raise NotImplementedError
 
     def run_round(self, source_root: str | Path) -> ImprovementRound:

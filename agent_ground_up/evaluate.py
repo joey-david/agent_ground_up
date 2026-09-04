@@ -91,6 +91,8 @@ class LocalCodingRunner:
             workdir = Path(temp) / "workspace"
             shutil.copytree(template, workdir)
             env = os.environ.copy() | self.environment
+            inherited = env.get("PYTHONPATH", "")
+            env["PYTHONPATH"] = str(candidate) + (os.pathsep + inherited if inherited else "")
             process = subprocess.run(
                 [
                     self.python,
