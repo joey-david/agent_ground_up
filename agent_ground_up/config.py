@@ -14,6 +14,8 @@ def _project_root(config_path: Path) -> Path:
     for candidate in config_path.parents:
         if (candidate / "pyproject.toml").exists():
             return candidate
+    if config_path.parent.name == "configs":
+        return config_path.parent.parent
     return config_path.parent
 
 
