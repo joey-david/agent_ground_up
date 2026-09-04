@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from typing import Any
 
@@ -59,7 +60,9 @@ class ContinuousResponsesRuntime:
         request: dict[str, Any] = {
             "model": self.model,
             "instructions": instructions,
-            "input": self.history,
+            # Snapshot at the provider boundary: later compaction is allowed to mutate our local
+            # replay state, but it must never retroactively mutate the request that was just sent.
+            "input": copy.deepcopy(self.history),
             "tools": self._response_tools(tools),
             "tool_choice": "auto",
             "parallel_tool_calls": True,
