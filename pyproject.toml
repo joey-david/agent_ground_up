@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-ground-up"
-version = "0.1.0"
-description = "A small multimodal coding agent and its SFT/RL training pipeline"
+version = "0.2.0"
+description = "A compact self-evolving multimodal agent with continuous cognition, memory, skills, and recursive improvement"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "openai>=1.68",
+    "openai>=3.8",
     "pillow>=10",
     "pyyaml>=6",
     "rich>=13",
