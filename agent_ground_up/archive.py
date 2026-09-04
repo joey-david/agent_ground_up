@@ -25,10 +25,9 @@ class Archive:
 
     DEFAULT_EDITABLE = (
         "agent_ground_up",
-        "run.py",
-        "evolve.py",
-        "config.yaml",
-        "improvement_policy.md",
+        "scripts/run.py",
+        "scripts/evolve.py",
+        "configs/lamgate.yaml",
         "skills",
     )
 

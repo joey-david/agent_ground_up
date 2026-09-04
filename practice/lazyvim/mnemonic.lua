@@ -8,7 +8,7 @@ return {
     config = function()
       local root = vim.fs.root(0, { ".git" }) or vim.fn.getcwd()
       require("mnemonic").setup({
-        vault = root .. "/learning",
+        vault = root .. "/practice",
         daily_limit = 8,
         target_retrievability = 0.90,
         keymaps = {

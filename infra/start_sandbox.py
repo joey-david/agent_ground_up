@@ -5,18 +5,16 @@ import os
 
 import uvicorn
 
-from agent_ground_up.config import load_config, section
+from agent_ground_up.config import DEFAULT_CONFIG, load_config, section
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default=os.getenv("AGENT_CONFIG", "config.yaml"))
+    parser.add_argument("--config", default=os.getenv("AGENT_CONFIG", str(DEFAULT_CONFIG)))
     args = parser.parse_args()
     os.environ["AGENT_CONFIG"] = args.config
     values = section(load_config(args.config), "sandbox")
-    uvicorn.run(
-        "infra.sandbox_server:app", host=values["host"], port=values["port"], access_log=False
-    )
+    uvicorn.run("infra.sandbox_server:app", host=values["host"], port=values["port"], access_log=False)
 
 
 if __name__ == "__main__":

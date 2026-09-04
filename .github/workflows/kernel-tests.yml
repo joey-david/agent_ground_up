@@ -20,8 +20,17 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.6"
           python -m pip install "openai>=3.8" "pillow>=10" "pyyaml>=6" "rich>=13" "pytest>=8"
+      - name: Check clean teaching layout
+        run: |
+          test ! -e attempt_1
+          test ! -e attempt_2
+          test ! -e requirements.txt
+          test ! -e config.yaml
+          test -e configs/lamgate.yaml
+          test -e scripts/run.py
+          test -e practice/README.md
       - name: Compile kernel
-        run: python -m compileall -q agent_ground_up run.py evolve.py train.py
+        run: python -m compileall -q agent_ground_up scripts infra
       - name: Run focused kernel tests
         run: |
           pytest -q \

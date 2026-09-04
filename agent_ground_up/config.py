@@ -6,14 +6,25 @@ from typing import Any
 
 import yaml
 
+DEFAULT_CONFIG = Path("configs/lamgate.yaml")
+
+
+def _project_root(config_path: Path) -> Path:
+    """Resolve project-relative paths independently of where YAML files live."""
+    for candidate in config_path.parents:
+        if (candidate / "pyproject.toml").exists():
+            return candidate
+    return config_path.parent
+
 
 def load_config(path: str | Path | None = None) -> dict[str, Any]:
-    """Load YAML and remember the file paths used to resolve relative values."""
-    config_path = (
-        Path(path or os.getenv("AGENT_CONFIG", "config.yaml")).expanduser().resolve(strict=True)
-    )
-    data = yaml.safe_load(config_path.read_text())
-    data["_root"] = config_path.parent
+    """Load YAML and remember the project root used for relative values."""
+    raw_path = path or os.getenv("AGENT_CONFIG") or DEFAULT_CONFIG
+    config_path = Path(raw_path).expanduser().resolve(strict=True)
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    if not isinstance(data, dict):
+        raise ValueError("configuration root must be a mapping")
+    data["_root"] = _project_root(config_path)
     data["_path"] = config_path
     return data
 
@@ -24,7 +35,7 @@ def section(config: dict[str, Any], name: str) -> dict[str, Any]:
 
 
 def path(config: dict[str, Any], value: str | Path) -> Path:
-    """Resolve a config path relative to its YAML file."""
+    """Resolve a path relative to the project root, not the configs directory."""
     candidate = Path(value).expanduser()
     return candidate if candidate.is_absolute() else config["_root"] / candidate
 
