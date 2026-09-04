@@ -78,6 +78,11 @@ class ContinuousResponsesRuntime:
             ]
 
         response = self.client.responses.create(**request)
+        status = getattr(response, "status", "completed") or "completed"
+        if status in {"failed", "cancelled", "incomplete"}:
+            details = getattr(response, "incomplete_details", None) or getattr(response, "error", None)
+            raise RuntimeError(f"Responses API turn ended with status={status}: {details}")
+
         output = [self._sanitize_output_item(self._dump(item)) for item in response.output]
         self.history.extend(output)
         new_compactions = sum(item.get("type") == "compaction" for item in output)
@@ -126,7 +131,9 @@ class ContinuousResponsesRuntime:
                     "name": function["name"],
                     "description": function.get("description", ""),
                     "parameters": function.get("parameters", {"type": "object"}),
-                    "strict": True,
+                    # Existing local schemas contain optional arguments (e.g. timeout_s), which
+                    # are not valid strict-mode schemas unless every property is required.
+                    "strict": bool(function.get("strict", False)),
                 }
             )
         return converted
