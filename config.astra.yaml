@@ -1,0 +1,28 @@
+model:
+  runtime: responses_continuous
+  served_name: gpt-6-astra
+  base_url: https://api.openai.com/v1
+  api_key_env: OPENAI_API_KEY
+  context_window: 262144
+  reasoning_effort: high
+  reasoning_summary: auto
+  compact_threshold: 175000
+
+agent:
+  workdir: .
+  trajectory: runs/latest-astra.json
+  compact_at: 0.90
+  recent_user_tokens: 12000
+  max_output_tokens: 16384
+  max_tool_output_tokens: 8192
+  max_steps: 256
+  wall_time_s: 7200
+  memory_dir: state/memory
+  experience_dir: state/experience
+  wake_records: 6
+  memory_leaf_size: 8
+  memory_summary_chars: 500
+  skills_dir: skills
+
+ui:
+  max_lines: 40

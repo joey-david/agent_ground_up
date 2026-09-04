@@ -6,11 +6,10 @@ import os
 from dataclasses import asdict
 from pathlib import Path
 
-from openai import OpenAI
-from transformers import AutoProcessor
-
 from agent_ground_up.agent import Agent
-from agent_ground_up.config import load_config, path, secret, section
+from agent_ground_up.config import load_config, path, section
+from agent_ground_up.experience import ExperienceLog
+from agent_ground_up.factory import build_model_runtime
 from agent_ground_up.memory import ConstantMemory
 from agent_ground_up.skills import SkillRegistry
 from agent_ground_up.tools import Toolbox
@@ -26,6 +25,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--quiet", action="store_true", help="disable TUI output")
     parser.add_argument("--json", action="store_true", help="emit final RunResult as JSON")
     parser.add_argument("--no-memory", action="store_true")
+    parser.add_argument("--no-experience", action="store_true")
     parser.add_argument("--no-skills", action="store_true")
     return parser.parse_args()
 
@@ -36,12 +36,7 @@ def main() -> None:
     model_config = section(config, "model")
     agent_config = section(config, "agent")
     ui_config = section(config, "ui")
-    if not model_config.get("base_url"):
-        raise SystemExit("Set model.base_url in config.yaml")
-    processor = AutoProcessor.from_pretrained(model_config["processor"], trust_remote_code=False)
-
-    def token_counter(text: str) -> int:
-        return len(processor.tokenizer.encode(text, add_special_tokens=False))
+    bundle = build_model_runtime(model_config)
 
     workdir = (
         Path(args.workdir).expanduser().resolve()
@@ -61,20 +56,23 @@ def main() -> None:
             leaf_size=int(agent_config.get("memory_leaf_size", 8)),
             summary_chars=int(agent_config.get("memory_summary_chars", 500)),
         )
+    experience = None
+    if not args.no_experience:
+        experience = ExperienceLog(path(config, agent_config.get("experience_dir", "state/experience")))
     skills = None
     if not args.no_skills:
         skills = SkillRegistry(path(config, agent_config.get("skills_dir", "skills")))
 
     ui = None if args.quiet else TUI(max_lines=ui_config["max_lines"])
     agent = Agent(
-        OpenAI(base_url=model_config["base_url"], api_key=secret(model_config, "api_key_env")),
+        bundle.client,
         model_config["served_name"],
         Toolbox(
             workdir,
             max_output_tokens=agent_config["max_tool_output_tokens"],
-            token_counter=token_counter,
+            token_counter=bundle.token_counter,
         ),
-        processor,
+        bundle.processor,
         context_window=model_config["context_window"],
         compact_at=agent_config["compact_at"],
         recent_user_tokens=agent_config["recent_user_tokens"],
@@ -84,7 +82,9 @@ def main() -> None:
         trajectory_path=trajectory,
         ui=ui,
         memory=memory,
+        experience=experience,
         skills=skills,
+        runtime=bundle.runtime,
     )
     result = agent.run(args.task)
     if ui:

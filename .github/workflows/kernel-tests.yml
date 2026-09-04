@@ -1,0 +1,38 @@
+name: kernel-tests
+
+on:
+  push:
+    branches: [self-evolving-kernel]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install lightweight runtime/test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "openai>=3.8" "pillow>=10" "pyyaml>=6" "rich>=13" "pytest>=8"
+      - name: Compile kernel
+        run: python -m compileall -q agent_ground_up run.py evolve.py
+      - name: Run focused kernel tests
+        run: |
+          pytest -q \
+            tests/test_tools.py \
+            tests/test_agent.py \
+            tests/test_agent_memory.py \
+            tests/test_agent_continuous.py \
+            tests/test_memory.py \
+            tests/test_experience.py \
+            tests/test_skills.py \
+            tests/test_tasks.py \
+            tests/test_evaluate.py \
+            tests/test_archive.py \
+            tests/test_improve.py \
+            tests/test_runtime.py
