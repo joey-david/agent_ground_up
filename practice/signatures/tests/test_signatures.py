@@ -18,26 +18,60 @@ MODULES = [
     "improve.py",
     "loss.py",
 ]
+REQUIRED = "<required>"
 
 
 def annotation(node: ast.expr | None) -> str | None:
     return None if node is None else ast.unparse(node)
 
 
+def default(node: ast.expr | None) -> str:
+    return REQUIRED if node is None else ast.unparse(node)
+
+
 def function_contract(node: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple:
     positional = [*node.args.posonlyargs, *node.args.args]
-    defaults = [False] * (len(positional) - len(node.args.defaults)) + [True] * len(node.args.defaults)
+    positional_defaults: list[ast.expr | None] = [None] * (
+        len(positional) - len(node.args.defaults)
+    ) + list(node.args.defaults)
     positional_contract = tuple(
-        (arg.arg, annotation(arg.annotation), has_default)
-        for arg, has_default in zip(positional, defaults, strict=True)
+        (arg.arg, annotation(arg.annotation), default(value))
+        for arg, value in zip(positional, positional_defaults, strict=True)
     )
     kwonly = tuple(
-        (arg.arg, annotation(arg.annotation), default is not None)
-        for arg, default in zip(node.args.kwonlyargs, node.args.kw_defaults, strict=True)
+        (arg.arg, annotation(arg.annotation), default(value))
+        for arg, value in zip(node.args.kwonlyargs, node.args.kw_defaults, strict=True)
     )
-    vararg = None if node.args.vararg is None else (node.args.vararg.arg, annotation(node.args.vararg.annotation))
-    kwarg = None if node.args.kwarg is None else (node.args.kwarg.arg, annotation(node.args.kwarg.annotation))
+    vararg = (
+        None
+        if node.args.vararg is None
+        else (node.args.vararg.arg, annotation(node.args.vararg.annotation))
+    )
+    kwarg = (
+        None
+        if node.args.kwarg is None
+        else (node.args.kwarg.arg, annotation(node.args.kwarg.annotation))
+    )
     return positional_contract, kwonly, vararg, kwarg, annotation(node.returns)
+
+
+def class_contract(node: ast.ClassDef) -> tuple:
+    bases = tuple(ast.unparse(base) for base in node.bases)
+    fields = tuple(
+        (
+            child.target.id,
+            annotation(child.annotation),
+            default(child.value),
+        )
+        for child in node.body
+        if isinstance(child, ast.AnnAssign) and isinstance(child.target, ast.Name)
+    )
+    methods = tuple(
+        (child.name, function_contract(child))
+        for child in node.body
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+    )
+    return bases, fields, methods
 
 
 def contracts(path: Path) -> dict[str, tuple]:
@@ -45,16 +79,14 @@ def contracts(path: Path) -> dict[str, tuple]:
     result: dict[str, tuple] = {}
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            result[node.name] = function_contract(node)
+            result[f"function:{node.name}"] = function_contract(node)
         elif isinstance(node, ast.ClassDef):
-            for child in node.body:
-                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    result[f"{node.name}.{child.name}"] = function_contract(child)
+            result[f"class:{node.name}"] = class_contract(node)
     return result
 
 
-def test_all_python_signatures_and_types_match() -> None:
+def test_all_python_interfaces_types_and_defaults_match() -> None:
     for filename in MODULES:
         expected = contracts(REFERENCE / "kernel" / filename)
         actual = contracts(TARGET / "kernel" / filename)
-        assert actual == expected, f"signature mismatch in {filename}"
+        assert actual == expected, f"interface mismatch in {filename}"
