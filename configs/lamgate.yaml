@@ -2,7 +2,7 @@ model:
   runtime: chat_completions
   processor: Qwen/Qwen3.6-27B
   served_name: Qwen/Qwen3.6-27B
-  base_url: http://127.0.0.1:8000/v1
+  base_url: http://127.0.0.1:8020/v1
   api_key_env: API_KEY
   context_window: 32768
 

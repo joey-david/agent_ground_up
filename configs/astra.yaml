@@ -1,12 +1,28 @@
+# Provider-native continuous-state profile, pointed at DeepSeek V4.
+#
+# DeepSeek exposes an OpenAI-compatible Responses API, so the ContinuousResponsesRuntime works:
+# reasoning items come back in `output` and are replayed verbatim, which is exactly what DeepSeek
+# requires (it returns 400 if prior reasoning is not passed back on tool-carrying requests).
+#
+# Two caveats, both from DeepSeek silently ignoring parameters rather than erroring:
+#   * `include: ["reasoning.encrypted_content"]` is not supported, so reasoning replays as plain
+#     items rather than encrypted provider state. The runtime sends it regardless (it is hardcoded)
+#     and DeepSeek drops it.
+#   * `context_management` compaction is not supported. Because provider compaction is the ONLY
+#     compaction on this path (Agent._maybe_compact is chat-path only), a DeepSeek run has no
+#     compaction at all -- context grows until the 1M window is exhausted. `compact_threshold: 0`
+#     keeps the runtime from sending a parameter that would be ignored anyway; bound long runs with
+#     max_steps / wall_time_s instead.
 model:
   runtime: responses_continuous
-  served_name: gpt-6-astra
-  base_url: https://api.openai.com/v1
-  api_key_env: OPENAI_API_KEY
-  context_window: 262144
+  served_name: deepseek-v4-pro
+  base_url: https://api.deepseek.com
+  api_key_env: DEEPSEEK_API_KEY
+  context_window: 1000000
   reasoning_effort: high
+  # Accepted but inert: DeepSeek generates no reasoning summary.
   reasoning_summary: auto
-  compact_threshold: 175000
+  compact_threshold: 0
 
 agent:
   workdir: .

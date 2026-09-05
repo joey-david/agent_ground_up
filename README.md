@@ -30,14 +30,21 @@ The root intentionally contains only project metadata plus those six purpose-spe
 
 ## Run against lamgate
 
-`infra/lamgate/` is prepared infrastructure and is **not part of the 2–3 hour implementation clock**. After the remote vLLM container is up, open the tunnel:
+`infra/lamgate/` is prepared infrastructure and is **not part of the 2–3 hour implementation clock**.
+
+`lamgate` is a login host without GPUs, so the backend runs natively on a compute node reached
+through it (the nodes have no container runtime and the account is unprivileged). Start it on the
+node, then tunnel from the laptop:
 
 ```bash
-./infra/lamgate/tunnel.sh
+ssh upnquick 'GPUS=0 ~/agent-ground-up/infra/lamgate/serve.sh'   # one A100; cards are shared
+./infra/lamgate/tunnel.sh                                        # 127.0.0.1:8020 -> upnquick:8011
 API_KEY=EMPTY uv run python scripts/run.py 'Fix the failing test and verify it.'
+ssh upnquick '~/agent-ground-up/infra/lamgate/stop.sh'           # hand the GPU back
 ```
 
-The default profile is `configs/lamgate.yaml`. The optional provider-native continuous-state profile is `configs/astra.yaml`.
+The default profile is `configs/lamgate.yaml`. The optional provider-native continuous-state profile
+is `configs/astra.yaml`. See `infra/lamgate/README.md` for details.
 
 ## Recursive smoke loop
 
