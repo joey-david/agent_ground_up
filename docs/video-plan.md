@@ -40,12 +40,12 @@ The editable policy lives at `agent_ground_up/improvement_policy.md`; the held-o
 - tests and benchmark fixtures
 - config/CLI glue
 - provider SDK adapter
-- `infra/lamgate/` model backend and SSH tunnel
+- `infra/upnquick/` model backend and SSH tunnel
 - sandbox server
 - vLLM/TRL rollout plumbing, QLoRA, merge/quantization
 - benchmark downloads
 
-The backend on `ssh lamgate` is explicitly **not part of the three-hour clock**.
+The backend on `ssh upnquick` is explicitly **not part of the three-hour clock**.
 
 ## Practice
 

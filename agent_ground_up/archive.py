@@ -27,7 +27,7 @@ class Archive:
         "agent_ground_up",
         "scripts/run.py",
         "scripts/evolve.py",
-        "configs/lamgate.yaml",
+        "configs/upnquick.yaml",
         "skills",
     )
 

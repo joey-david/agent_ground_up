@@ -6,7 +6,7 @@ from typing import Any
 
 import yaml
 
-DEFAULT_CONFIG = Path("configs/lamgate.yaml")
+DEFAULT_CONFIG = Path("configs/upnquick.yaml")
 
 
 def _project_root(config_path: Path) -> Path:

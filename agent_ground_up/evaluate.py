@@ -83,9 +83,9 @@ class LocalCodingRunner:
         if not template.exists() or not template.is_dir():
             raise ValueError(f"workspace template does not exist: {template}")
         run_py = candidate / "scripts" / "run.py"
-        config = candidate / "configs" / "lamgate.yaml"
+        config = candidate / "configs" / "upnquick.yaml"
         if not run_py.exists() or not config.exists():
-            return CaseResult(case.id, 0.0, False, "candidate missing scripts/run.py or configs/lamgate.yaml")
+            return CaseResult(case.id, 0.0, False, "candidate missing scripts/run.py or configs/upnquick.yaml")
 
         with tempfile.TemporaryDirectory(prefix=f"eval-{case.id}-") as temp:
             workdir = Path(temp) / "workspace"

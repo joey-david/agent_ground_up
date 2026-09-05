@@ -27,7 +27,7 @@ jobs:
           test ! -e requirements.txt
           test ! -e config.yaml
           test ! -e todo.md
-          test -e configs/lamgate.yaml
+          test -e configs/upnquick.yaml
           test -e scripts/run.py
           test -e scripts/train.py
           test -e practice/implementation/kernel/agent.py

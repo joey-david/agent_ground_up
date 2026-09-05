@@ -1,8 +1,7 @@
 # Agent Ground Up
 
-A compact reference implementation of a **recursively self-improving coding agent** plus a reconstruction curriculum for learning it from memory.
-
-The research loop is:
+A compact reference implementation of a **recursively self-improving coding agent**, plus a
+reconstruction curriculum for rebuilding it from memory.
 
 ```text
 capability-frontier task family
@@ -12,64 +11,73 @@ population archive → self-mutation → train evidence
         └──────── held-out evaluation
 ```
 
-The agent combines modern long-horizon primitives—provider-native continuous state when available, append-only searchable experience, bounded semantic memory, generated skills—and a fixed held-out evaluator. The training path also exposes the LM internals manually: causal logits → chosen-token log-probs → policy ratios → clipping/KL → token-normalized loss.
-
-## Repository
+~2.5k lines of kernel: continuous provider state, append-only searchable experience, bounded
+semantic memory, generated skills, a fixed held-out evaluator. `loss.py` derives the RL objective by
+hand — causal shift → chosen-token log-probs → policy ratios → clipping/KL → token normalization —
+so TRL stays rollout and optimizer plumbing instead of hiding the core.
 
 ```text
-agent_ground_up/   reference kernel and recursive-improvement code
-configs/           runtime profiles (`lamgate.yaml` is the default)
-docs/              video / implementation boundary
-infra/             prepared backend, sandbox, rollout and packaging infrastructure
-practice/          two resettable active-recall workspaces
-scripts/           run / evolve / train entry points
-tests/             reference tests and smoke fixtures
+agent_ground_up/   kernel and recursive-improvement code
+configs/           runtime profiles (`upnquick.yaml` is the default)
+infra/             backend, sandbox, rollout, packaging — prepared, not reconstructed
+practice/          two resettable recall workspaces
+scripts/           run / evolve / train
+tests/ docs/       reference tests; implementation boundary
 ```
 
-The root intentionally contains only project metadata plus those six purpose-specific directories. Old ad hoc attempts, demo images/text, duplicate requirements, and loose TODO files are removed.
+## Run it
 
-## Run against lamgate
-
-`infra/lamgate/` is prepared infrastructure and is **not part of the 2–3 hour implementation clock**.
-
-`lamgate` is a login host without GPUs, so the backend runs natively on a compute node reached
-through it (the nodes have no container runtime and the account is unprivileged). Start it on the
-node, then tunnel from the laptop:
+The backend runs natively on the `upnquick` compute node (2x A100 80GB, shared, unprivileged, no
+container runtime); the laptop reaches it over an SSH tunnel.
 
 ```bash
-ssh upnquick 'GPUS=0 ~/agent-ground-up/infra/lamgate/serve.sh'   # one A100; cards are shared
-./infra/lamgate/tunnel.sh                                        # 127.0.0.1:8020 -> upnquick:8011
+ssh upnquick 'GPUS=0 ~/agent-ground-up/infra/upnquick/serve.sh'   # one A100; cards are shared
+./infra/upnquick/tunnel.sh                                        # 127.0.0.1:8020 -> upnquick:8011
 API_KEY=EMPTY uv run python scripts/run.py 'Fix the failing test and verify it.'
-ssh upnquick '~/agent-ground-up/infra/lamgate/stop.sh'           # hand the GPU back
+API_KEY=EMPTY uv run python scripts/evolve.py --rounds 3 --unsafe-local
+ssh upnquick '~/agent-ground-up/infra/upnquick/stop.sh'           # hand the GPU back
 ```
 
-The default profile is `configs/lamgate.yaml`. The optional provider-native continuous-state profile
-is `configs/astra.yaml`. See `infra/lamgate/README.md` for details.
+Failure modes: `infra/upnquick/README.md`. `configs/astra.yaml` is the provider-native
+continuous-state alternative. `--unsafe-local` runs candidate code on the host and suits the bundled
+smoke fixtures only; real descendants belong inside the sandbox boundary.
 
-## Recursive smoke loop
+## Replicate it
+
+Everything under `infra/` is prepared off-camera and sits outside the ~140–160 minute budget
+(`docs/video-plan.md`). You reconstruct the kernel, not the backend.
+
+**First, make the reference green** so the tests are a trustworthy answer key:
 
 ```bash
-API_KEY=EMPTY uv run python scripts/evolve.py --rounds 3 --unsafe-local
+uv sync --extra dev --extra sandbox && uv run pytest -q
 ```
 
-The bundled local candidate runner is for trusted smoke fixtures only; serious self-modified descendants should execute as whole processes inside an external/container boundary.
+**Then fill the templates in order.** Both workspaces reset with
+`git restore practice/implementation practice/signatures`.
 
-## Manual LM objective
+1. **`practice/implementation/`** — signatures, types and `NotImplementedError` bodies are given;
+   write the bodies and the marked config values. Dependency order, each step usable on its own:
+   `tools.py` (bash boundary, process-group timeout, output truncation) → `memory.py` (append-only
+   memories, bounded wake context, summary-tree zoom) → `skills.py` (generated procedures over the
+   same boundary) → `agent.py` (model/tool loop, dynamic tools, completion, persistent state) →
+   `tasks.py`/`evaluate.py` (sibling train/held-out families, fixed evaluator) →
+   `archive.py`/`improve.py` (immutable descendants, novelty selection, the round) → `loss.py` (the
+   clipped DAPO/GRPO-style objective) → `config.yaml` (profile schema and values).
+   Check with `uv run pytest -q practice/implementation/tests`.
 
-`agent_ground_up/loss.py` explicitly implements the causal shift, `log_softmax`, sampled-token gather, importance ratio, asymmetric clipping, optional reverse-KL, and active-token normalization. TRL remains rollout/distribution/optimizer plumbing rather than hiding the core objective.
+2. **`practice/signatures/`** — the same files, empty. Write *only* signatures and annotations;
+   bodies may be `...`. Tests compare the AST against drill 1, so they check names, kinds, defaults
+   and types without executing anything. Check with `uv run pytest -q practice/signatures/tests`.
 
-## Practice / replication
+3. **Blank directory, timed, `agent_ground_up/` unopened.** The drills exist to make this boring.
 
-- `practice/implementation/`: signatures and types are supplied; implement bodies until tests pass.
-- `practice/signatures/`: files are empty; reconstruct signatures/types only, with AST tests.
-- both include YAML/TOML recall tasks.
-
-See `practice/README.md` and `docs/video-plan.md`.
+Prompts in `practice/cards.md`, per-workspace notes in `practice/README.md`.
 
 ## Validation
 
 ```bash
-uv sync --extra dev
+uv sync --extra dev --extra sandbox
 uv run pytest -q
 uv run ruff check . --exclude practice
 ```

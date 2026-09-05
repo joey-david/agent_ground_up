@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Forward the laptop's local port to the backend running on a lamsade GPU node.
 #
-# The GPUs are on the compute nodes, not on the lamgate login host, so the forward targets the
+# The GPUs are on the compute nodes, not on the upnquick login host, so the forward targets the
 # node's loopback and reaches it through the ProxyJump defined in ~/.ssh/config.
 set -euo pipefail
 

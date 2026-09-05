@@ -2,8 +2,8 @@
 #
 # This is NOT the lamsade path: the compute nodes (upnquick and siblings) have no container
 # runtime and the account is unprivileged, so nothing here can run there. On lamsade use
-# infra/lamgate/serve.sh, which starts the same vLLM version natively with the same flags.
-name: agent-ground-up-lamgate
+# infra/upnquick/serve.sh, which starts the same vLLM version natively with the same flags.
+name: agent-ground-up-upnquick
 
 services:
   llm:
