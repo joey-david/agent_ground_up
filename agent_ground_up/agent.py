@@ -332,10 +332,35 @@ class Agent:
             schemas.extend(SKILL_TOOL_SCHEMAS)
         return schemas
 
+    @staticmethod
+    def _collapse_leading_system(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Join the leading system messages into one before anything leaves the agent.
+
+        The kernel keeps the base prompt and the canonical state as two separate system
+        messages so that `_is_compaction_message` can recognise the canonical block and drop
+        it from episodic history. Qwen chat templates reject any system message that is not
+        the very first one, and vLLM renders that same template server-side, so both the
+        token count and the request itself must see a single merged block.
+        """
+        leading: list[str] = []
+        rest_index = 0
+        for index, message in enumerate(messages):
+            if message.get("role") != "system" or not isinstance(message.get("content"), str):
+                rest_index = index
+                break
+            leading.append(message["content"])
+        else:
+            rest_index = len(messages)
+        if len(leading) < 2:
+            return messages
+        merged = {"role": "system", "content": "\n\n".join(leading)}
+        return [merged, *messages[rest_index:]]
+
     def _complete(
         self, messages: list[dict[str, Any]], *, tools: list[dict[str, Any]] | None
     ) -> dict[str, Any]:
         """Request one Chat Completions assistant message within the remaining context budget."""
+        wire_messages = self._collapse_leading_system(messages)
         prompt_tokens = self._prompt_tokens(messages, tools)
         self.last_prompt_tokens = prompt_tokens
         available = self.context_window - prompt_tokens
@@ -343,7 +368,7 @@ class Agent:
             raise RuntimeError("Prompt exceeds the configured context window")
         kwargs: dict[str, Any] = {
             "model": self.model,
-            "messages": messages,
+            "messages": wire_messages,
             "max_tokens": min(self.max_output_tokens, available),
         }
         if tools:
@@ -497,7 +522,7 @@ class Agent:
             raise RuntimeError("Chat Completions runtime requires the served model's processor")
         try:
             processor_messages = []
-            for message in messages:
+            for message in self._collapse_leading_system(messages):
                 calls = []
                 for call in message.get("tool_calls") or []:
                     function = call.get("function") or {}

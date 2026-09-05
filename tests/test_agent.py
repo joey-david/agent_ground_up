@@ -13,6 +13,7 @@ from agent_ground_up.agent import (
     SYSTEM_PROMPT,
     Agent,
 )
+from agent_ground_up.skills import SkillRegistry
 from agent_ground_up.tools import Toolbox
 from agent_ground_up.ui import TUI
 
@@ -178,3 +179,30 @@ def test_safe_trajectory_removes_image_bytes() -> None:
     agent = Agent(FakeClient([]), "fake", Toolbox("."), FakeProcessor())
     agent.messages = [{"role": "tool", "content": [value]}]
     assert "secret" not in json.dumps(agent._trajectory_messages())
+
+
+def test_leading_system_messages_are_merged_on_the_wire(tmp_path: Path) -> None:
+    """Qwen chat templates reject a system message that is not the very first one.
+
+    The kernel deliberately keeps the base prompt and the canonical state apart so that
+    compaction can drop the canonical block, so the merge has to happen where messages
+    leave the agent, not in `agent.messages` itself.
+    """
+    client = FakeClient([{"role": "assistant", "content": "done"}])
+    agent = Agent(
+        client,
+        "fake",
+        Toolbox(tmp_path),
+        FakeProcessor(),
+        skills=SkillRegistry(tmp_path / "skills"),
+    )
+    result = agent.run("merge the system blocks")
+
+    assert result.status == "completed"
+    sent = client.chat.completions.calls[0]["messages"]
+    assert [message["role"] for message in sent[:2]] == ["system", "user"]
+    assert sent[0]["content"].startswith(SYSTEM_PROMPT)
+    assert CANONICAL_PREFIX in sent[0]["content"]
+    # The split is preserved internally, so episodic history can still drop the canonical block.
+    assert [message["role"] for message in agent.messages[:3]] == ["system", "system", "user"]
+    assert agent.messages[1]["content"].startswith(CANONICAL_PREFIX)
