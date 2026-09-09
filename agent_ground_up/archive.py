@@ -51,16 +51,7 @@ class Archive:
         entry_id = f"{len(self.entries()):04d}-{fingerprint[:8]}"
         destination = self.root / entry_id
         destination.mkdir(parents=True, exist_ok=False)
-        for relative in self.editable:
-            src = source / relative
-            if not src.exists():
-                continue
-            dst = destination / relative
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            if src.is_dir():
-                shutil.copytree(src, dst)
-            else:
-                shutil.copy2(src, dst)
+        self._copy_editable(source, destination)
         entry = ArchiveEntry(
             id=entry_id,
             parent_id=parent_id,
@@ -107,16 +98,7 @@ class Archive:
             raise KeyError(entry_id)
         destination_path = Path(destination).resolve()
         destination_path.mkdir(parents=True, exist_ok=True)
-        for relative in self.editable:
-            src = source / relative
-            if not src.exists():
-                continue
-            dst = destination_path / relative
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            if src.is_dir():
-                shutil.copytree(src, dst, dirs_exist_ok=True)
-            else:
-                shutil.copy2(src, dst)
+        self._copy_editable(source, destination_path, into_existing=True)
         return destination_path
 
     def novelty(self, source_root: str | Path) -> float:
@@ -137,6 +119,25 @@ class Archive:
             for child in sorted(p for p in path.rglob("*") if p.is_file()):
                 self._hash_file(digest, source, child)
         return digest.hexdigest()
+
+    def _copy_editable(
+        self, source: Path, destination: Path, *, into_existing: bool = False
+    ) -> None:
+        """Copy exactly the mutable surface of the agent between two trees.
+
+        `editable` is the whole definition of what a descendant is allowed to differ in, so it
+        governs archiving, materializing, and fingerprinting alike.
+        """
+        for relative in self.editable:
+            src = source / relative
+            if not src.exists():
+                continue
+            dst = destination / relative
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            if src.is_dir():
+                shutil.copytree(src, dst, dirs_exist_ok=into_existing)
+            else:
+                shutil.copy2(src, dst)
 
     def _child_counts(self) -> dict[str, int]:
         counts: dict[str, int] = {}

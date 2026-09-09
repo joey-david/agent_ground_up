@@ -14,6 +14,7 @@ class TaskCase:
     verifier: str
     workspace: str | None = None
     split: str = "train"
+    followup: str | None = None
 
 
 @dataclass(slots=True)

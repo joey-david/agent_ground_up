@@ -10,6 +10,19 @@ from pathlib import Path
 SummaryFn = Callable[[list[str]], str]
 
 
+def elide(text: str, limit: int) -> str:
+    """Keep the head and tail of an overlong string and drop its middle.
+
+    Both bounds in this file are hard caps rather than hints: a memory record and a summary
+    each have to stay small enough that the wake context is constant-sized no matter how much
+    history has accumulated.
+    """
+    if len(text) <= limit:
+        return text
+    half = max(1, (limit - 5) // 2)
+    return text[:half].rstrip() + " ... " + text[-half:].lstrip()
+
+
 @dataclass(frozen=True, slots=True)
 class MemoryRecord:
     id: int
@@ -58,9 +71,7 @@ class ConstantMemory:
         text = text.strip()
         if not text:
             raise ValueError("memory text cannot be empty")
-        if len(text) > self.record_chars:
-            half = max(1, (self.record_chars - 5) // 2)
-            text = text[:half].rstrip() + " ... " + text[-half:].lstrip()
+        text = elide(text, self.record_chars)
         records = self.records()
         record = MemoryRecord(
             id=len(records),
@@ -187,11 +198,7 @@ class ConstantMemory:
         return max(nodes.values(), key=lambda node: (node.level, node.end - node.start))
 
     def _summarize(self, texts: list[str]) -> str:
-        summary = self.summarizer(texts).strip()
-        if len(summary) <= self.summary_chars:
-            return summary
-        half = max(1, (self.summary_chars - 5) // 2)
-        return summary[:half].rstrip() + " ... " + summary[-half:].lstrip()
+        return elide(self.summarizer(texts).strip(), self.summary_chars)
 
     @staticmethod
     def _default_summary(texts: list[str]) -> str:

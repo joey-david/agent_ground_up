@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import io
 import mimetypes
 import os
 import signal
@@ -48,42 +49,49 @@ class ImageResult:
         ]
 
 
+def arg(type_: str, description: str = "", **extra: Any) -> dict[str, Any]:
+    """Describe one tool parameter; `default` marks it optional and documents the fallback."""
+    spec: dict[str, Any] = {"type": type_}
+    if description:
+        spec["description"] = description
+    spec.update(extra)
+    return spec
+
+
+def tool(name: str, description: str, /, **properties: dict[str, Any]) -> dict[str, Any]:
+    """Build one Chat Completions tool schema from flat parameter specs.
+
+    This is only boilerplate removal: the model still receives the exact JSON Schema written
+    out longhand below the wrapper. A parameter is required unless its spec carries a
+    `default`, which is the convention every tool here already followed by hand.
+    """
+    return {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": description,
+            "parameters": {
+                "type": "object",
+                "properties": properties,
+                "required": [key for key, spec in properties.items() if "default" not in spec],
+                "additionalProperties": False,
+            },
+        },
+    }
+
+
 TOOL_SCHEMAS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "bash",
-            "description": "Run a bash command in the workspace and return combined output plus its exit code.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "command": {"type": "string", "description": "The command to run."},
-                    "timeout_s": {
-                        "type": "integer",
-                        "description": "Maximum runtime in seconds.",
-                        "default": 120,
-                    },
-                },
-                "required": ["command"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "view_image",
-            "description": "Open an image file from the workspace and show it to the multimodal model.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "Path relative to the workspace."},
-                },
-                "required": ["path"],
-                "additionalProperties": False,
-            },
-        },
-    },
+    tool(
+        "bash",
+        "Run a bash command in the workspace and return combined output plus its exit code.",
+        command=arg("string", "The command to run."),
+        timeout_s=arg("integer", "Maximum runtime in seconds.", default=120),
+    ),
+    tool(
+        "view_image",
+        "Open an image file from the workspace and show it to the multimodal model.",
+        path=arg("string", "Path relative to the workspace."),
+    ),
 ]
 
 
@@ -158,6 +166,8 @@ class Toolbox:
                 or "image/png"
             )
         encoded = base64.b64encode(image_path.read_bytes()).decode("ascii")
+        if self.token_counter(encoded) > self.max_output_tokens:
+            encoded, width, height, mime = self._shrink(image_path)
         return ImageResult(
             str(image_path.relative_to(self.workdir)),
             mime,
@@ -167,30 +177,54 @@ class Toolbox:
             f"data:{mime};base64,{encoded}",
         )
 
+    def _shrink(self, image_path: Path) -> tuple[str, int, int, str]:
+        """Halve an oversized image until its payload fits the same budget bash output gets.
+
+        An image arrives as one base64 blob, so unlike shell output it cannot be cut in the
+        middle: without this an ordinary screenshot can outweigh the whole context window in a
+        single observation, and no tool-output setting would bound it.
+        """
+        with Image.open(image_path) as original:
+            image = original.convert("RGB")
+        while True:
+            buffer = io.BytesIO()
+            image.save(buffer, format="JPEG", quality=80)
+            encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+            if self.token_counter(encoded) <= self.max_output_tokens:
+                return encoded, image.width, image.height, "image/jpeg"
+            if min(image.size) <= 16:
+                # Refusing is the honest outcome: the caller turns this into an observation the
+                # agent can act on, where returning it anyway would silently blow the window.
+                raise ValueError(
+                    "image cannot be reduced to fit the tool output budget; "
+                    "raise max_tool_output_tokens or shrink the file"
+                )
+            image = image.resize((max(1, image.width // 2), max(1, image.height // 2)))
+
     def _truncate(self, text: str) -> tuple[str, int]:
         """Fit output to a token budget while preserving its head and tail."""
         count = self.token_counter(text)
         if count <= self.max_output_tokens:
             return text, 0
-
-        target = self.max_output_tokens // 2
-        lo, hi = 0, len(text)
-        while lo < hi:
-            mid = (lo + hi + 1) // 2
-            if self.token_counter(text[:mid]) <= target:
-                lo = mid
-            else:
-                hi = mid - 1
-        head = text[:lo]
-
-        lo, hi = 0, len(text)
-        while lo < hi:
-            mid = (lo + hi + 1) // 2
-            if self.token_counter(text[len(text) - mid :]) <= target:
-                lo = mid
-            else:
-                hi = mid - 1
-        tail = text[len(text) - lo :]
+        budget = self.max_output_tokens // 2
+        head = self._longest_fit(text, budget)
+        tail = self._longest_fit(text, budget, tail=True)
         omitted = max(0, count - self.token_counter(head) - self.token_counter(tail))
-        marker = f"\n... [{omitted} tokens omitted] ...\n"
-        return head + marker + tail, omitted
+        return f"{head}\n... [{omitted} tokens omitted] ...\n{tail}", omitted
+
+    def _longest_fit(self, text: str, budget: int, *, tail: bool = False) -> str:
+        """Longest head (or tail) of `text` that fits the token budget.
+
+        Tokens are not characters, so the character count that fits has to be searched for.
+        The token counter is monotonic in slice length, which makes binary search valid and
+        costs log2(len(text)) tokenizations instead of one per character.
+        """
+        take = (lambda n: text[len(text) - n :]) if tail else (lambda n: text[:n])
+        low, high = 0, len(text)
+        while low < high:
+            middle = (low + high + 1) // 2
+            if self.token_counter(take(middle)) <= budget:
+                low = middle
+            else:
+                high = middle - 1
+        return take(low)

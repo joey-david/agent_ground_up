@@ -206,3 +206,102 @@ def test_leading_system_messages_are_merged_on_the_wire(tmp_path: Path) -> None:
     # The split is preserved internally, so episodic history can still drop the canonical block.
     assert [message["role"] for message in agent.messages[:3]] == ["system", "system", "user"]
     assert agent.messages[1]["content"].startswith(CANONICAL_PREFIX)
+
+
+class LengthProcessor:
+    """Token count proportional to message count, so history size is easy to control in tests."""
+
+    def apply_chat_template(self, messages: list[dict[str, Any]], **_: Any) -> dict[str, list[int]]:
+        return {"input_ids": [list(range(100 * len(messages)))]}
+
+
+def test_compaction_request_fits_the_window_and_stays_well_formed(tmp_path: Path) -> None:
+    agent = Agent(
+        FakeClient([]),
+        "fake",
+        Toolbox(tmp_path),
+        LengthProcessor(),
+        context_window=1000,
+        max_output_tokens=200,
+    )
+    agent.messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": "the original task"},
+        *[
+            item
+            for index in range(20)
+            for item in (
+                {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {"id": str(index), "function": {"name": "bash", "arguments": "{}"}}
+                    ],
+                },
+                {"role": "tool", "tool_call_id": str(index), "name": "bash", "content": "output"},
+            )
+        ],
+    ]
+
+    request = agent._compaction_request()
+
+    # Fits the window with room left to generate the checkpoint into.
+    assert agent._prompt_tokens(request, None) <= agent.context_window - agent.max_output_tokens
+    # Keeps the system message, ends with the compaction instruction, and leaves no orphan
+    # tool result at the front that the wire format would reject.
+    assert request[0]["role"] == "system"
+    assert request[-1]["content"] == agent.compact_prompt
+    assert request[1]["role"] != "tool"
+
+
+def test_compaction_request_keeps_the_newest_turn_when_the_window_is_tiny(tmp_path: Path) -> None:
+    agent = Agent(
+        FakeClient([]),
+        "fake",
+        Toolbox(tmp_path),
+        LengthProcessor(),
+        context_window=10,
+        max_output_tokens=4096,
+    )
+    agent.messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": "first"},
+        {"role": "user", "content": "newest"},
+    ]
+
+    request = agent._compaction_request()
+
+    assert request[-2]["content"] == "newest"
+    assert request[-1]["content"] == agent.compact_prompt
+
+
+def test_compaction_triggers_when_output_room_runs_out_below_the_ratio(tmp_path: Path) -> None:
+    agent = Agent(
+        FakeClient([]),
+        "fake",
+        Toolbox(tmp_path),
+        LengthProcessor(),
+        context_window=10_000,
+        compact_at=0.90,
+        max_output_tokens=4096,
+    )
+
+    # Comfortably under the 90% ratio, yet too little room left to generate a reply into.
+    assert not agent._has_room(8_000)
+    # Under the ratio with room to spare.
+    assert agent._has_room(3_000)
+    # Over the ratio.
+    assert not agent._has_room(9_500)
+
+
+def test_has_room_never_demands_compaction_it_cannot_satisfy(tmp_path: Path) -> None:
+    # An output budget larger than the whole window must not make every step compact.
+    agent = Agent(
+        FakeClient([]),
+        "fake",
+        Toolbox(tmp_path),
+        LengthProcessor(),
+        context_window=100,
+        max_output_tokens=4096,
+    )
+
+    assert agent._has_room(20)

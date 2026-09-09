@@ -5,158 +5,86 @@ import os
 import platform
 import re
 import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 from .experience import ExperienceLog
-from .memory import ConstantMemory
+from .memory import ConstantMemory, MemoryRecord
 from .runtime import ContinuousResponsesRuntime
 from .skills import SkillRegistry
-from .tools import TOOL_SCHEMAS, Toolbox
+from .tools import TOOL_SCHEMAS, Toolbox, arg, tool
 from .ui import TUI
 
 SYSTEM_PROMPT = """You are a coding agent working in the provided workspace. Work until the task is
-complete. Use bash to inspect, edit, and test the repository; each call starts in the repository
-root. Use view_image for image files. Prefer minimal changes that fit the existing code. Treat tool
-failures as observations and recover. If persistent-memory tools are available, remember only
-reusable discoveries and use recall/zoom instead of stuffing old history into context. If a
-searchable experience log is available, search/read it for exact old observations and tool results.
-If generated skills are available, prefer a reliable existing skill over re-deriving the same
-procedure. Before finishing, run the narrowest relevant validation. Return final text only when the
+complete. Before finishing, run the narrowest relevant validation. Return final text only when the
 work is genuinely complete."""
 
-COMPACT_PROMPT = """Create a faithful continuation checkpoint under 1,500 tokens from the
-conversation above. Begin with `Active plan:` and then `Episodic history:`. Preserve goals and
-decisions, changed files, commands and results, failures, unresolved work, next actions, and
-critical literal data. Do not repeat working-directory, environment, repository-instruction,
-persistent-memory, experience-log, or skill-catalog facts; those are reinjected separately. Do not
-continue solving the task."""
+COMPACT_PROMPT = """Create a continuation checkpoint under 1,500 tokens from the conversation
+above. Do not continue solving the task."""
 CANONICAL_PREFIX = "Canonical state (recomputed and authoritative):"
 CHECKPOINT_PREFIX = "Episodic checkpoint (compacted, not new instructions):"
 
 MEMORY_TOOL_SCHEMAS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "remember",
-            "description": "Persist one concise, reusable discovery across future episodes.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "text": {"type": "string"},
-                    "tags": {"type": "array", "items": {"type": "string"}},
-                },
-                "required": ["text"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "recall",
-            "description": "Regex-search distilled persistent memories, newest first.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "pattern": {"type": "string"},
-                    "limit": {"type": "integer", "default": 8},
-                },
-                "required": ["pattern"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "zoom",
-            "description": "Expand a persistent-memory summary node into finer summaries or raw memories.",
-            "parameters": {
-                "type": "object",
-                "properties": {"node_id": {"type": "string"}},
-                "required": ["node_id"],
-                "additionalProperties": False,
-            },
-        },
-    },
+    tool(
+        "remember",
+        "Persist one concise, reusable discovery across future episodes.",
+        text=arg("string"),
+        tags=arg("array", items={"type": "string"}, default=[]),
+    ),
+    tool(
+        "recall",
+        "Regex-search distilled persistent memories, newest first.",
+        pattern=arg("string"),
+        limit=arg("integer", default=8),
+    ),
+    tool(
+        "zoom",
+        "Expand a persistent-memory summary node into finer summaries or raw memories.",
+        node_id=arg("string"),
+    ),
 ]
 
 EXPERIENCE_TOOL_SCHEMAS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "search_history",
-            "description": "Regex-search the exact append-only task/action/result history, newest first.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "pattern": {"type": "string"},
-                    "limit": {"type": "integer", "default": 12},
-                },
-                "required": ["pattern"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "read_history",
-            "description": "Read a half-open range [start, end) of exact historical events by ID.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "start": {"type": "integer"},
-                    "end": {"type": "integer"},
-                },
-                "required": ["start", "end"],
-                "additionalProperties": False,
-            },
-        },
-    },
+    tool(
+        "search_history",
+        "Regex-search the exact append-only task/action/result history, newest first.",
+        pattern=arg("string"),
+        limit=arg("integer", default=12),
+    ),
+    tool(
+        "read_history",
+        "Read a half-open range [start, end) of exact historical events by ID.",
+        start=arg("integer"),
+        end=arg("integer"),
+    ),
 ]
 
 SKILL_TOOL_SCHEMAS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "create_skill",
-            "description": "Persist a reusable shell procedure as a generated skill.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string"},
-                    "description": {"type": "string"},
-                    "script": {
-                        "type": "string",
-                        "description": "Shell source defining main(), which receives one argument.",
-                    },
-                },
-                "required": ["name", "description", "script"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "skill",
-            "description": "Run one persistent generated skill by name inside the workspace.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string"},
-                    "argument": {"type": "string", "default": ""},
-                    "timeout_s": {"type": "integer", "default": 120},
-                },
-                "required": ["name"],
-                "additionalProperties": False,
-            },
-        },
-    },
+    tool(
+        "create_skill",
+        "Persist a reusable shell procedure as a generated skill.",
+        name=arg("string"),
+        description=arg("string"),
+        script=arg("string", "Shell source defining main(), which receives one argument."),
+    ),
+    tool(
+        "skill",
+        "Run one persistent generated skill by name inside the workspace.",
+        name=arg("string"),
+        argument=arg("string", default=""),
+        timeout_s=arg("integer", default=120),
+    ),
 ]
+
+ALL_TOOL_SCHEMAS = (
+    *TOOL_SCHEMAS,
+    *MEMORY_TOOL_SCHEMAS,
+    *EXPERIENCE_TOOL_SCHEMAS,
+    *SKILL_TOOL_SCHEMAS,
+)
+SCHEMAS = {schema["function"]["name"]: schema for schema in ALL_TOOL_SCHEMAS}
 
 
 @dataclass(slots=True)
@@ -192,6 +120,10 @@ class Agent:
         max_output_tokens: int = 4096,
         max_steps: int = 80,
         wall_time_s: int = 3600,
+        system_prompt: str = SYSTEM_PROMPT,
+        compact_prompt: str = COMPACT_PROMPT,
+        temperature: float | None = None,
+        top_p: float | None = None,
         trajectory_path: str | Path | None = None,
         ui: TUI | None = None,
         memory: ConstantMemory | None = None,
@@ -209,6 +141,10 @@ class Agent:
         self.max_output_tokens = max_output_tokens
         self.max_steps = max_steps
         self.wall_time_s = wall_time_s
+        self.system_prompt = system_prompt
+        self.compact_prompt = compact_prompt
+        self.temperature = temperature
+        self.top_p = top_p
         self.trajectory_path = Path(trajectory_path) if trajectory_path else None
         self.ui = ui
         self.memory = memory
@@ -221,20 +157,17 @@ class Agent:
         self.valid_tool_calls = 0
         self.invalid_tool_calls = 0
         self.last_prompt_tokens = 0
+        self.handlers = self._build_handlers()
 
     def run(self, task: str) -> RunResult:
         """Work on a task until the model finishes or a runtime limit is reached."""
         started = self._begin(task)
-        if self.runtime is not None:
-            result = self._run_continuous(started)
-        else:
-            result = self._run_chat(started)
-        return self._finish(result)
+        return self._finish(self._run(started))
 
     def _begin(self, task: str) -> float:
         started = time.monotonic()
         self.original_task = task
-        self.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        self.messages = [{"role": "system", "content": self.system_prompt}]
         if self.memory is not None or self.experience is not None or self.skills is not None:
             self.messages.append({"role": "system", "content": self._canonical_state()})
         self.messages.append({"role": "user", "content": task})
@@ -247,7 +180,8 @@ class Agent:
             self.ui.user(task)
         return started
 
-    def _run_chat(self, started: float) -> RunResult:
+    def _run(self, started: float) -> RunResult:
+        """The loop, identical for both runtimes: think, act on every tool call, repeat."""
         answer = ""
         status = "step_limit"
         steps = 0
@@ -255,41 +189,7 @@ class Agent:
             if time.monotonic() - started >= self.wall_time_s:
                 status = "wall_time_limit"
                 break
-            self._maybe_compact()
-            message = self._complete(self.messages, tools=self._tool_schemas())
-            self.messages.append(message)
-            self._record("assistant", message)
-            if self.ui:
-                self.ui.assistant(message)
-            calls = message.get("tool_calls") or []
-            if not calls:
-                answer = message.get("content") or ""
-                status = "completed"
-                break
-            for call in calls:
-                self.messages.append(self._execute(call))
-            self._write_trajectory(self._result("running", "", steps, started))
-        else:
-            steps = self.max_steps
-        return self._result(status, answer, steps, started)
-
-    def _run_continuous(self, started: float) -> RunResult:
-        assert self.runtime is not None
-        answer = ""
-        status = "step_limit"
-        steps = 0
-        for steps in range(1, self.max_steps + 1):
-            if time.monotonic() - started >= self.wall_time_s:
-                status = "wall_time_limit"
-                break
-            turn = self.runtime.complete(
-                instructions=self._runtime_instructions(),
-                tools=self._tool_schemas(),
-                max_output_tokens=self.max_output_tokens,
-            )
-            self.last_prompt_tokens = turn.input_tokens
-            self.compactions = turn.compactions
-            message = turn.message
+            message = self._turn()
             self.messages.append(message)
             self._record("assistant", message)
             if self.ui:
@@ -302,15 +202,35 @@ class Agent:
             for call in calls:
                 observation = self._execute(call)
                 self.messages.append(observation)
-                self.runtime.submit_tool_output(
-                    call_id=observation["tool_call_id"],
-                    name=observation["name"],
-                    content=observation["content"],
-                )
+                if self.runtime is not None:
+                    self.runtime.submit_tool_output(
+                        call_id=observation["tool_call_id"],
+                        name=observation["name"],
+                        content=observation["content"],
+                    )
             self._write_trajectory(self._result("running", "", steps, started))
         else:
             steps = self.max_steps
         return self._result(status, answer, steps, started)
+
+    def _turn(self) -> dict[str, Any]:
+        """Ask for one assistant message, and keep context bounded the way this runtime does.
+
+        The chat path owns its context: it compacts locally into a written checkpoint before
+        asking. The continuous path hands that job to the provider and just reports back what
+        the turn cost.
+        """
+        if self.runtime is None:
+            self._maybe_compact()
+            return self._complete(self.messages, tools=self._tool_schemas())
+        turn = self.runtime.complete(
+            instructions=self._runtime_instructions(),
+            tools=self._tool_schemas(),
+            max_output_tokens=self.max_output_tokens,
+        )
+        self.last_prompt_tokens = turn.input_tokens
+        self.compactions = turn.compactions
+        return turn.message
 
     def _finish(self, result: RunResult) -> RunResult:
         self._write_trajectory(result)
@@ -322,15 +242,38 @@ class Agent:
             )
         return result
 
+    def _build_handlers(self) -> dict[str, Callable[..., Any]]:
+        """Bind every tool this agent can actually run to the call that answers it.
+
+        This table is the single source of truth for both halves of a tool: `_tool_schemas`
+        advertises exactly these names to the model and `_execute` dispatches exactly these
+        names, so the two can never drift. Handlers forward keyword arguments untouched, which
+        leaves each argument's real default in one place — the subsystem being called.
+        """
+        handlers: dict[str, Callable[..., Any]] = {
+            "bash": lambda **kwargs: self.tools.bash(**kwargs).as_text(),
+            "view_image": lambda **kwargs: self.tools.view_image(**kwargs).content(),
+        }
+        if (memory := self.memory) is not None:
+            handlers |= {
+                "remember": lambda **kwargs: f"remembered #{memory.remember(**kwargs).id}",
+                "recall": lambda **kwargs: self._format_memories(memory.recall(**kwargs)),
+                "zoom": lambda **kwargs: memory.zoom(**kwargs),
+            }
+        if (experience := self.experience) is not None:
+            handlers |= {
+                "search_history": lambda **kwargs: experience.format(experience.search(**kwargs)),
+                "read_history": lambda **kwargs: experience.format(experience.read(**kwargs)),
+            }
+        if (skills := self.skills) is not None:
+            handlers |= {
+                "create_skill": lambda **kwargs: f"created skill {skills.register(**kwargs).name}",
+                "skill": lambda **kwargs: skills.run(runner=self.tools, **kwargs).as_text(),
+            }
+        return handlers
+
     def _tool_schemas(self) -> list[dict[str, Any]]:
-        schemas = list(TOOL_SCHEMAS)
-        if self.memory is not None:
-            schemas.extend(MEMORY_TOOL_SCHEMAS)
-        if self.experience is not None:
-            schemas.extend(EXPERIENCE_TOOL_SCHEMAS)
-        if self.skills is not None:
-            schemas.extend(SKILL_TOOL_SCHEMAS)
-        return schemas
+        return [SCHEMAS[name] for name in self.handlers]
 
     @staticmethod
     def _collapse_leading_system(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -371,6 +314,10 @@ class Agent:
             "messages": wire_messages,
             "max_tokens": min(self.max_output_tokens, available),
         }
+        if self.temperature is not None:
+            kwargs["temperature"] = self.temperature
+        if self.top_p is not None:
+            kwargs["top_p"] = self.top_p
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
@@ -380,54 +327,23 @@ class Agent:
         return data
 
     def _execute(self, call: dict[str, Any]) -> dict[str, Any]:
-        """Dispatch one model-emitted tool call and return its observation."""
+        """Dispatch one model-emitted tool call and return its observation.
+
+        Every failure the model can cause — bad JSON, a missing argument, a bad regex, an
+        unreadable file — comes back as a readable observation rather than an exception, so a
+        wrong call costs the agent one step instead of the whole run.
+        """
         call_id = call.get("id", "missing-call-id")
         function = call.get("function") or {}
         name = function.get("name")
         raw_arguments = function.get("arguments") or "{}"
         self._record("tool_call", {"call_id": call_id, "name": name, "arguments": raw_arguments})
+        content: str | list[dict[str, Any]]
         try:
-            arguments = json.loads(raw_arguments)
-            if name == "bash":
-                result = self.tools.bash(**arguments)
-                content: str | list[dict[str, Any]] = result.as_text()
-            elif name == "view_image":
-                image = self.tools.view_image(**arguments)
-                content = image.content()
-            elif name == "remember" and self.memory is not None:
-                record = self.memory.remember(arguments["text"], arguments.get("tags", ()))
-                content = f"remembered #{record.id}"
-            elif name == "recall" and self.memory is not None:
-                records = self.memory.recall(arguments["pattern"], limit=arguments.get("limit", 8))
-                content = (
-                    "\n".join(f"#{record.id}: {record.text}" for record in records)
-                    or "no matches"
-                )
-            elif name == "zoom" and self.memory is not None:
-                content = self.memory.zoom(arguments["node_id"])
-            elif name == "search_history" and self.experience is not None:
-                content = self.experience.format(
-                    self.experience.search(arguments["pattern"], limit=arguments.get("limit", 12))
-                )
-            elif name == "read_history" and self.experience is not None:
-                content = self.experience.format(
-                    self.experience.read(arguments["start"], arguments["end"])
-                )
-            elif name == "create_skill" and self.skills is not None:
-                skill = self.skills.register(
-                    arguments["name"], arguments["description"], arguments["script"]
-                )
-                content = f"created skill {skill.name}"
-            elif name == "skill" and self.skills is not None:
-                result = self.skills.run(
-                    arguments["name"],
-                    self.tools,
-                    argument=arguments.get("argument", ""),
-                    timeout_s=arguments.get("timeout_s", 120),
-                )
-                content = result.as_text()
-            else:
+            handler = self.handlers.get(name or "")
+            if handler is None:
                 raise ValueError(f"unknown tool: {name}")
+            content = handler(**json.loads(raw_arguments))
             self.valid_tool_calls += 1
         except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError, re.error) as error:
             self.invalid_tool_calls += 1
@@ -444,28 +360,69 @@ class Agent:
             "content": content,
         }
 
+    @staticmethod
+    def _format_memories(records: list[MemoryRecord]) -> str:
+        return "\n".join(f"#{record.id}: {record.text}" for record in records) or "no matches"
+
     def _maybe_compact(self) -> None:
         """Chat path only: replace a nearly-full history with a continuation checkpoint."""
         tools = self._tool_schemas()
         tokens = self._prompt_tokens(self.messages, tools)
         self.last_prompt_tokens = tokens
-        if tokens / self.context_window < self.compact_at:
+        if self._has_room(tokens):
             return
 
-        compact_messages = [*self._episodic_history(), {"role": "user", "content": COMPACT_PROMPT}]
-        checkpoint = self._complete(compact_messages, tools=None).get("content") or ""
+        checkpoint = self._complete(self._compaction_request(), tools=None).get("content") or ""
         if self.ui:
             self.ui.assistant({"role": "assistant", "content": checkpoint}, title="Compaction")
         self.messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": self.system_prompt},
             {"role": "system", "content": self._canonical_state()},
             {"role": "assistant", "content": f"{CHECKPOINT_PREFIX}\n{checkpoint}"},
             *self._recent_user_messages(),
         ]
         self.compactions += 1
         self._record("manual_compaction", {"checkpoint": checkpoint})
-        if self._prompt_tokens(self.messages, tools) / self.context_window >= self.compact_at:
+        if not self._has_room(self._prompt_tokens(self.messages, tools)):
             raise RuntimeError("Compacted checkpoint still exceeds the context threshold")
+
+    def _has_room(self, tokens: int) -> bool:
+        """Whether a prompt of this size can still be answered without compacting first.
+
+        Two conditions, not one. The ratio is the ordinary trigger, but a single step can add
+        several large observations at once and clear the threshold in one jump, so the request
+        must also retain enough room to generate a reply into. Checking only the ratio leaves a
+        window where the next completion has no output budget and fails outright.
+        """
+        below_threshold = tokens / self.context_window < self.compact_at
+        # Cap the reserve at a quarter of the window: a configuration whose output budget rivals
+        # its context would otherwise demand compaction on every step and never make progress.
+        reserve = min(self.max_output_tokens, self.context_window // 4)
+        return below_threshold and self.context_window - tokens >= reserve
+
+    def _compaction_request(self) -> list[dict[str, Any]]:
+        """Episodic history plus the compaction instruction, trimmed to leave room for the reply.
+
+        The checkpoint is written *from* this request, so the request has to fit the window and
+        still leave space to generate into. Without the trim, a history that has grown past the
+        window makes the one call that could rescue it the call that fails. Surplus history is
+        dropped oldest-first: the canonical state is reinjected separately, and a continuation
+        needs the newest turns. A leading system message is kept, and any `tool` message left
+        without the assistant turn that requested it is dropped so the wire format stays valid.
+        The newest turn always survives, so a window too small to hold even that still produces a
+        well-formed request rather than an empty one.
+        """
+        instruction = {"role": "user", "content": self.compact_prompt}
+        history = self._episodic_history()
+        head = history[:1] if history and history[0].get("role") == "system" else []
+        body = history[len(head) :]
+        budget = self.context_window - self.max_output_tokens
+        while len(body) > 1 and (
+            body[0].get("role") == "tool"
+            or self._prompt_tokens([*head, *body, instruction], None) > budget
+        ):
+            body = body[1:]
+        return [*head, *body, instruction]
 
     def _episodic_history(self) -> list[dict[str, Any]]:
         return [message for message in self.messages if not self._is_compaction_message(message)]
@@ -482,7 +439,7 @@ class Agent:
         return recent
 
     def _runtime_instructions(self) -> str:
-        return f"{SYSTEM_PROMPT}\n\n{self._canonical_state()}"
+        return f"{self.system_prompt}\n\n{self._canonical_state()}"
 
     def _canonical_state(self) -> str:
         instructions = self.tools.workdir / "AGENTS.md"
@@ -498,14 +455,20 @@ class Agent:
             f"Repository instructions:\n{repository_rules}",
         ]
         if self.memory is not None:
-            sections.append(self.memory.wake())
+            sections.append(
+                f"{self.memory.wake()}\nRemember only reusable discoveries; "
+                "prefer recall/zoom over restating old history."
+            )
         if self.experience is not None:
             sections.append(
                 f"Searchable exact experience log: {self.experience.count()} events; "
                 "use search_history/read_history for old observations and tool results."
             )
         if self.skills is not None:
-            sections.append(self.skills.prompt_catalog())
+            sections.append(
+                f"{self.skills.prompt_catalog()}\nPrefer a reliable existing skill over "
+                "re-deriving the same procedure."
+            )
         return "\n".join(sections)
 
     @staticmethod
