@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -42,6 +43,9 @@ class Agent:
         raise NotImplementedError
 
     def run(self, task: str) -> RunResult:
+        raise NotImplementedError
+
+    def _build_handlers(self) -> dict[str, Callable[..., Any]]:
         raise NotImplementedError
 
     def _tool_schemas(self) -> list[dict[str, Any]]:

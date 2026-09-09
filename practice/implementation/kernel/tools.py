@@ -30,6 +30,17 @@ class ImageResult:
         raise NotImplementedError
 
 
+def arg(type_: str, description: str = "", **extra: Any) -> dict[str, Any]:
+    raise NotImplementedError
+
+
+def tool(name: str, description: str, /, **properties: dict[str, Any]) -> dict[str, Any]:
+    raise NotImplementedError
+
+
+TOOL_SCHEMAS: list[dict[str, Any]] = []  # bash and view_image, built with tool()/arg()
+
+
 class Toolbox:
     def __init__(
         self,
@@ -47,4 +58,7 @@ class Toolbox:
         raise NotImplementedError
 
     def _truncate(self, text: str) -> tuple[str, int]:
+        raise NotImplementedError
+
+    def _longest_fit(self, text: str, budget: int, *, tail: bool = False) -> str:
         raise NotImplementedError

@@ -7,6 +7,10 @@ from pathlib import Path
 SummaryFn = Callable[[list[str]], str]
 
 
+def elide(text: str, limit: int) -> str:
+    raise NotImplementedError
+
+
 @dataclass(frozen=True, slots=True)
 class MemoryRecord:
     id: int
