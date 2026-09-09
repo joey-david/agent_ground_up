@@ -1,0 +1,13 @@
+{
+  "c0_baseline": "Create a faithful continuation checkpoint under 1,500 tokens from the conversation above. Begin with `Active plan:` and then `Episodic history:`. Preserve goals and decisions, changed files, commands and results, failures, unresolved work, next actions, and critical literal data. Do not repeat working-directory, environment, repository-instruction, persistent-memory, experience-log, or skill-catalog facts; those are reinjected separately. Do not continue solving the task.",
+
+  "c1_no_headings": "Create a faithful continuation checkpoint under 1,500 tokens from the conversation above. Preserve goals and decisions, changed files, commands and results, failures, unresolved work, next actions, and critical literal data. Do not repeat working-directory, environment, repository-instruction, persistent-memory, experience-log, or skill-catalog facts; those are reinjected separately. Do not continue solving the task.",
+
+  "c2_no_dedup": "Create a faithful continuation checkpoint under 1,500 tokens from the conversation above. Begin with `Active plan:` and then `Episodic history:`. Preserve goals and decisions, changed files, commands and results, failures, unresolved work, next actions, and critical literal data. Do not continue solving the task.",
+
+  "c3_no_preserve_list": "Create a faithful continuation checkpoint under 1,500 tokens from the conversation above. Begin with `Active plan:` and then `Episodic history:`. Do not repeat working-directory, environment, repository-instruction, persistent-memory, experience-log, or skill-catalog facts; those are reinjected separately. Do not continue solving the task.",
+
+  "c4_core": "Create a continuation checkpoint under 1,500 tokens from the conversation above. Do not continue solving the task.",
+
+  "c5_minimal": "Summarize the conversation above so the work can continue."
+}

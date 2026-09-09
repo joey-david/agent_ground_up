@@ -1,0 +1,334 @@
+{
+  "families": [
+    {
+      "name": "debug",
+      "description": "Repair a small wrong implementation from its specification and behavioral evidence.",
+      "cases": [
+        {
+          "id": "add",
+          "prompt": "The add function in bug.py is wrong. Fix it.",
+          "workspace": "benchmarks/coding/workspaces/add",
+          "verifier": "python3 -c 'import bug; assert bug.add(2,3)==5; assert bug.add(-2,1)==-1'",
+          "split": "train"
+        },
+        {
+          "id": "normalize",
+          "prompt": "normalize() in text.py should trim surrounding whitespace, collapse internal runs of whitespace to single spaces, and lowercase. Fix it.",
+          "workspace": "benchmarks/coding/workspaces/normalize",
+          "verifier": "python3 -c \"import text; assert text.normalize('  Hello   World  ')=='hello world'; assert text.normalize('A\\tB')=='a b'\"",
+          "split": "train"
+        },
+        {
+          "id": "dedupe",
+          "prompt": "dedupe() in dedupe.py must remove duplicates while preserving first-seen order. It currently loses the order. Fix it.",
+          "workspace": "benchmarks/coding/workspaces/dedupe",
+          "verifier": "python3 -c 'import dedupe; assert dedupe.dedupe([3,1,3,2,1])==[3,1,2]; assert dedupe.dedupe([])==[]'",
+          "split": "train"
+        },
+        {
+          "id": "retry",
+          "prompt": "retry() in retry.py should call fn up to `attempts` times total, returning the first success and re-raising the last error. It currently makes one call too few.",
+          "workspace": "benchmarks/coding/workspaces/retry",
+          "verifier": "python3 -c \"\nimport retry\ncalls=[]\ndef f():\n    calls.append(1)\n    if len(calls)<3: raise ValueError('boom')\n    return 'ok'\nassert retry.retry(f, attempts=3)=='ok', calls\nassert len(calls)==3, calls\n\"",
+          "split": "train"
+        },
+        {
+          "id": "flatten",
+          "prompt": "flatten() in flatten.py should flatten nested lists completely. It only goes one level deep. Fix it.",
+          "workspace": "benchmarks/coding/workspaces/flatten",
+          "verifier": "python3 -c 'import flatten; assert flatten.flatten([1,[2,[3,[4]]],5])==[1,2,3,4,5]; assert flatten.flatten([])==[]'",
+          "split": "train"
+        },
+        {
+          "id": "binsearch",
+          "prompt": "search() in bsearch.py returns the wrong index on some inputs and never finds the last element. Fix it.",
+          "workspace": "benchmarks/coding/workspaces/binsearch",
+          "verifier": "python3 -c 'import bsearch as b; xs=[1,3,5,7,9]; assert b.search(xs,9)==4; assert b.search(xs,1)==0; assert b.search(xs,5)==2; assert b.search(xs,4)==-1'",
+          "split": "heldout"
+        },
+        {
+          "id": "transpose",
+          "prompt": "transpose() in matrix.py mangles non-square matrices. Fix it.",
+          "workspace": "benchmarks/coding/workspaces/transpose",
+          "verifier": "python3 -c 'import matrix; assert matrix.transpose([[1,2,3],[4,5,6]])==[[1,4],[2,5],[3,6]]; assert matrix.transpose([[1]])==[[1]]'",
+          "split": "heldout"
+        },
+        {
+          "id": "pathjoin",
+          "prompt": "safe_join() in safepath.py must join a base directory with a relative path, and raise ValueError if the result escapes the base. It currently allows escapes.",
+          "workspace": "benchmarks/coding/workspaces/pathjoin",
+          "verifier": "python3 -c \"\nimport safepath\nassert safepath.safe_join('/a/b','c/d')=='/a/b/c/d'\ntry:\n    safepath.safe_join('/a/b','../../etc')\nexcept ValueError:\n    pass\nelse:\n    raise AssertionError('expected ValueError')\n\"",
+          "split": "heldout"
+        }
+      ]
+    },
+    {
+      "name": "implement",
+      "description": "Write a function from a specification with a test file already present.",
+      "cases": [
+        {
+          "id": "fizzbuzz",
+          "prompt": "Implement fizzbuzz(n) in fizzbuzz.py so that test_fizzbuzz.py passes. Run the tests.",
+          "workspace": "benchmarks/coding/workspaces/fizzbuzz",
+          "verifier": "python3 -m pytest -q test_fizzbuzz.py",
+          "split": "train"
+        },
+        {
+          "id": "roman",
+          "prompt": "Implement to_roman(n) in roman.py for 1..3999 so that test_roman.py passes. Run the tests.",
+          "workspace": "benchmarks/coding/workspaces/roman",
+          "verifier": "python3 -m pytest -q test_roman.py",
+          "split": "train"
+        },
+        {
+          "id": "template",
+          "prompt": "Implement render(template, values) in template.py: replace every {{name}} with the matching value, leaving unknown placeholders untouched. Make test_template.py pass.",
+          "workspace": "benchmarks/coding/workspaces/template",
+          "verifier": "python3 -m pytest -q test_template.py",
+          "split": "heldout"
+        },
+        {
+          "id": "filterdicts",
+          "prompt": "Implement where(rows, **conditions) in query.py: return the rows matching every condition by equality. Make test_query.py pass.",
+          "workspace": "benchmarks/coding/workspaces/filterdicts",
+          "verifier": "python3 -m pytest -q test_query.py",
+          "split": "heldout"
+        }
+      ]
+    },
+    {
+      "name": "repo",
+      "description": "Multi-file work: fix an import, make a suite pass, or produce a required output file.",
+      "cases": [
+        {
+          "id": "importfix",
+          "prompt": "The pkg package fails to import. Fix it without changing the public API.",
+          "workspace": "benchmarks/coding/workspaces/importfix",
+          "verifier": "python3 -c 'import pkg; assert pkg.compute(3)==7'",
+          "split": "train"
+        },
+        {
+          "id": "suite",
+          "prompt": "Two tests in this project fail. Make the whole suite pass without weakening the tests.",
+          "workspace": "benchmarks/coding/workspaces/suite",
+          "verifier": "python3 -m pytest -q test_stats.py",
+          "split": "train"
+        },
+        {
+          "id": "cli",
+          "prompt": "Write a script wc.py that reads words.txt and writes counts.txt containing 'word count' lines, most frequent first, ties broken alphabetically. Then run it.",
+          "workspace": "benchmarks/coding/workspaces/cli",
+          "verifier": "python3 -c \"\nlines=[l.split() for l in open('counts.txt').read().strip().splitlines()]\ngot=[(w,int(c)) for w,c in lines]\nassert got[:3]==[('cat',3),('the',3),('sat',2)], got\n\"",
+          "split": "train"
+        },
+        {
+          "id": "jsonmerge",
+          "prompt": "Write merged.json: the result of merging base.json with override.json, where override wins on conflicting top-level keys.",
+          "workspace": "benchmarks/coding/workspaces/jsonmerge",
+          "verifier": "python3 -c \"\nimport json\nd=json.load(open('merged.json'))\nassert d=={'a':1,'b':99,'keep':'yes','c':3}, d\n\"",
+          "split": "train"
+        },
+        {
+          "id": "suite2",
+          "prompt": "The test suite for this small module fails. Make it pass without weakening the tests.",
+          "workspace": "benchmarks/coding/workspaces/suite2",
+          "verifier": "python3 -m pytest -q test_cart.py",
+          "split": "heldout"
+        },
+        {
+          "id": "configfile",
+          "prompt": "Write a module settings.py exposing load(path) that reads a KEY=value file, ignores blank lines and # comments, and returns a dict with the defaults {'host': 'localhost', 'port': '8080'} applied for missing keys. Verify it against app.conf.",
+          "workspace": "benchmarks/coding/workspaces/configfile",
+          "verifier": "python3 -c \"\nimport settings\nd=settings.load('app.conf')\nassert d['port']=='9000' and d['host']=='localhost' and d['name']=='demo', d\n\"",
+          "split": "heldout"
+        },
+        {
+          "id": "csvsum",
+          "prompt": "data.csv has a header and an 'amount' column. Write total.txt containing only the sum of that column, formatted with two decimals.",
+          "workspace": "benchmarks/coding/workspaces/csvsum",
+          "verifier": "python3 -c \"\nv=open('total.txt').read().strip()\nassert v=='15.00', repr(v)\n\"",
+          "split": "heldout"
+        }
+      ]
+    },
+    {
+      "name": "text",
+      "description": "String and data shaping against conventional expected behavior.",
+      "cases": [
+        {
+          "id": "slugify",
+          "prompt": "slugify() in slug.py should lowercase, trim, and turn runs of non-alphanumeric characters into single hyphens, with no leading or trailing hyphen. Fix it.",
+          "workspace": "benchmarks/coding/workspaces/slugify",
+          "verifier": "python3 -c \"\nimport slug\nassert slug.slugify('  Hello World  ')=='hello-world'\nassert slug.slugify('A  B')=='a-b'\nassert slug.slugify('Foo!Bar')=='foo-bar'\n\"",
+          "split": "heldout"
+        },
+        {
+          "id": "chunks",
+          "prompt": "chunks(xs, n) in chunks.py should split a list into consecutive chunks of size n, with a shorter final chunk if needed. Fix it.",
+          "workspace": "benchmarks/coding/workspaces/chunks",
+          "verifier": "python3 -c 'import chunks as c; assert c.chunks([1,2,3,4,5],2)==[[1,2],[3,4],[5]]; assert c.chunks([],3)==[]'",
+          "split": "heldout"
+        },
+        {
+          "id": "dateparse",
+          "prompt": "normalize_date() in dates.py should accept 'DD/MM/YYYY' or 'YYYY-MM-DD' and always return 'YYYY-MM-DD'. Fix it.",
+          "workspace": "benchmarks/coding/workspaces/dateparse",
+          "verifier": "python3 -c \"\nimport dates\nassert dates.normalize_date('05/09/2026')=='2026-09-05'\nassert dates.normalize_date('2026-09-05')=='2026-09-05'\n\"",
+          "split": "train"
+        }
+      ]
+    },
+    {
+      "name": "hard",
+      "description": "Tasks with traps: incomplete shipped tests, a broken documented runner, stateless cd, a read-only file, and a naive solution that is too slow.",
+      "cases": [
+        {
+          "id": "trap_edge",
+          "prompt": "Implement clean() in text.py so that it satisfies its docstring.",
+          "workspace": "benchmarks/coding/workspaces/trap_edge",
+          "verifier": "python3 -c \"\nimport text\nassert text.clean('  Hello  World ')=='hello world'\nassert text.clean(None)==''\nassert text.clean('A\\tB\\nC')=='a b c'\n\"",
+          "split": "hard"
+        },
+        {
+          "id": "preserve_api",
+          "prompt": "Add support for a per-item discount to Cart: add(name, price, qty=1, discount=0.0) where discount is a fraction off that line. Every existing test must keep passing.",
+          "workspace": "benchmarks/coding/workspaces/preserve_api",
+          "verifier": "python3 -c \"\nfrom cart import Cart\nc=Cart(); c.add('a',10.0,2,discount=0.5)\nassert c.total()==10.0, c.total()\nc2=Cart(); c2.add('a',2.0,3)\nassert c2.total()==6.0 and c2.names()==['a']\n\" && python3 -m pytest -q test_cart.py",
+          "split": "hard"
+        },
+        {
+          "id": "broken_runner",
+          "prompt": "The test suite for this project fails. Make it pass. The README explains how to run it.",
+          "workspace": "benchmarks/coding/workspaces/broken_runner",
+          "verifier": "python3 -m pytest -q test_calc.py",
+          "split": "hard"
+        },
+        {
+          "id": "deep_repo",
+          "prompt": "test_pipeline.py fails. Find the single module at fault and fix it so every helper follows the same convention as its siblings.",
+          "workspace": "benchmarks/coding/workspaces/deep_repo",
+          "verifier": "python3 -m pytest -q test_pipeline.py",
+          "split": "hard"
+        },
+        {
+          "id": "nested_cd",
+          "prompt": "Both services in services/ have a failing test. Fix both.",
+          "workspace": "benchmarks/coding/workspaces/nested_cd",
+          "verifier": "cd services/alpha && python3 -m pytest -q test_alpha.py && cd ../beta && python3 -m pytest -q test_beta.py",
+          "split": "hard"
+        },
+        {
+          "id": "readonly",
+          "prompt": "Fix the bug in locked.py so that scale(3) == 9.",
+          "workspace": "benchmarks/coding/workspaces/readonly",
+          "verifier": "python3 -c 'import locked; assert locked.scale(3)==9'",
+          "split": "hard"
+        },
+        {
+          "id": "missing_dep",
+          "prompt": "main.py fails to import. Create what it needs so that running it prints the slug of the given title.",
+          "workspace": "benchmarks/coding/workspaces/missing_dep",
+          "verifier": "out=$(python3 main.py '  Hello Wonderful World! ') && test \"$out\" = \"hello-wonderful-world\"",
+          "split": "hard"
+        },
+        {
+          "id": "three_bugs",
+          "prompt": "Every test in this project fails for a different reason. Make the whole suite pass without weakening the tests.",
+          "workspace": "benchmarks/coding/workspaces/three_bugs",
+          "verifier": "python3 -m pytest -q test_all.py",
+          "split": "hard"
+        },
+        {
+          "id": "perf",
+          "prompt": "count_pairs(xs, target) in pairs.py returns how many unordered index pairs sum to target. It is correct but far too slow on large inputs. Make it fast while keeping it correct.",
+          "workspace": "benchmarks/coding/workspaces/perf",
+          "verifier": "python3 -c \"\nimport time, random, pairs\nassert pairs.count_pairs([1,2,3,4],5)==2\nrandom.seed(0); xs=[random.randint(0,50) for _ in range(40000)]\nt=time.time(); got=pairs.count_pairs(xs,50); el=time.time()-t\nassert el < 5.0, f'too slow: {el:.1f}s'\nbrute=sum(1 for i,a in enumerate(xs[:1500]) for b in xs[i+1:1500] if a+b==50)\nsmall=pairs.count_pairs(xs[:1500],50)\nassert small==brute, (small,brute)\n\"",
+          "split": "hard"
+        }
+      ]
+    },
+    {
+      "name": "hard2",
+      "description": "Algorithmic and multi-file tasks with real failure modes and strict verifiers.",
+      "cases": [
+        {
+          "id": "lru",
+          "prompt": "Implement LRU in lru.py: LRU(capacity) with get(key) returning None when missing, put(key, value), and keys() listing keys most-recently-used first. get and put both count as uses; putting an existing key updates it without growing the cache; capacity 0 stores nothing.",
+          "workspace": "benchmarks/coding/workspaces/lru",
+          "verifier": "python3 -c \"\nfrom lru import LRU\nc=LRU(2); c.put('a',1); c.put('b',2)\nassert c.get('a')==1\nc.put('c',3)\nassert c.get('b') is None, 'b should have been evicted, not a'\nassert c.keys()==['c','a'], c.keys()\nc.put('a',9); assert c.get('a')==9 and len(c.keys())==2\nz=LRU(0); z.put('x',1); assert z.get('x') is None and z.keys()==[]\nd=LRU(3)\nfor k in 'abc': d.put(k,1)\nd.get('a'); d.put('d',1)\nassert d.keys()==['d','a','c'], d.keys()\n\"",
+          "split": "hard2"
+        },
+        {
+          "id": "toposort",
+          "prompt": "Implement toposort(graph) in topo.py. graph maps node -> list of nodes it must precede. Return a list in dependency order, breaking ties alphabetically so the result is deterministic. Raise ValueError if the graph contains a cycle.",
+          "workspace": "benchmarks/coding/workspaces/toposort",
+          "verifier": "python3 -c \"\nfrom topo import toposort\nassert toposort({'a':['b'],'b':['c'],'c':[]})==['a','b','c']\nassert toposort({'b':['z'],'a':['z'],'z':[]})==['a','b','z'], toposort({'b':['z'],'a':['z'],'z':[]})\nassert toposort({})==[]\ntry:\n    toposort({'a':['b'],'b':['a']})\nexcept ValueError: pass\nelse: raise AssertionError('cycle must raise ValueError')\n\"",
+          "split": "hard2"
+        },
+        {
+          "id": "expr",
+          "prompt": "Implement evaluate(text) in expr.py: a parser for integer arithmetic with + - * / parentheses and unary minus, standard precedence, left associative, truncating toward zero for division. Raise ValueError on malformed input or division by zero.",
+          "workspace": "benchmarks/coding/workspaces/expr",
+          "verifier": "python3 -c \"\nfrom expr import evaluate\nassert evaluate('1+2*3')==7\nassert evaluate('(1+2)*3')==9\nassert evaluate('-4+2')==-2\nassert evaluate('7/2')==3\nassert evaluate('-7/2')==-3, evaluate('-7/2')\nassert evaluate('2*-3')==-6\nfor bad in ['1+','(1','1/0','','a+1']:\n    try:\n        evaluate(bad)\n    except ValueError: pass\n    else: raise AssertionError('expected ValueError for %r' % bad)\n\"",
+          "split": "hard2"
+        },
+        {
+          "id": "intervals",
+          "prompt": "Implement merge(intervals) and insert(intervals, new) in intervals.py. Intervals are [start, end] inclusive-exclusive pairs. merge returns sorted, non-overlapping intervals with touching ones joined. insert adds one interval to an already-sorted list and merges as needed.",
+          "workspace": "benchmarks/coding/workspaces/intervals",
+          "verifier": "python3 -c \"\nfrom intervals import merge, insert\nassert merge([])==[]\nassert merge([[1,3],[2,6],[8,10]])==[[1,6],[8,10]]\nassert merge([[1,4],[4,5]])==[[1,5]]\nassert merge([[1,4],[2,3]])==[[1,4]]\nassert insert([[1,3],[6,9]],[2,5])==[[1,5],[6,9]]\nassert insert([],[5,7])==[[5,7]]\nassert insert([[1,5]],[6,8])==[[1,5],[6,8]]\n\"",
+          "split": "hard2"
+        },
+        {
+          "id": "wide_repo",
+          "prompt": "test_wide.py fails. Exactly one of the forty pipeline stages does not follow the same convention as its siblings. Find it and make it consistent, changing nothing else.",
+          "workspace": "benchmarks/coding/workspaces/wide_repo",
+          "verifier": "python3 -m pytest -q test_wide.py",
+          "split": "hard2"
+        },
+        {
+          "id": "stateful_cli",
+          "prompt": "Write todo.py, a CLI storing tasks in todo.json next to it. It must support: 'add TEXT' (prints the new id, ids start at 1 and never reuse), 'done ID' (marks complete), 'list' (prints one line per task as 'ID [x] TEXT' for complete or 'ID [ ] TEXT' for incomplete, in id order), and 'rm ID'. Unknown ids exit non-zero.",
+          "workspace": "benchmarks/coding/workspaces/stateful_cli",
+          "verifier": "python3 todo.py add \"write tests\" >/dev/null && python3 todo.py add \"ship it\" >/dev/null &&\npython3 todo.py done 1 >/dev/null &&\nout=$(python3 todo.py list) &&\ntest \"$out\" = \"1 [x] write tests\n2 [ ] ship it\" &&\npython3 todo.py rm 1 >/dev/null &&\nout2=$(python3 todo.py list) && test \"$out2\" = \"2 [ ] ship it\" &&\npython3 todo.py add third >/dev/null && out3=$(python3 todo.py list | tail -1) && test \"$out3\" = \"3 [ ] third\" &&\nif python3 todo.py done 99 >/dev/null 2>&1; then exit 1; fi",
+          "split": "hard2"
+        }
+      ]
+    },
+    {
+      "name": "probe",
+      "description": "Tasks that exercise the prompt clauses nothing else touches: images, large outputs, repeated procedures, and memory across episodes.",
+      "cases": [
+        {
+          "id": "image_spec",
+          "prompt": "spec.png contains the specification for parse_port. Implement it in net.py exactly as specified.",
+          "workspace": "benchmarks/coding/workspaces/image_spec",
+          "verifier": "python3 -c \"\nimport net\nassert net.parse_port('host:9000')==9000\nassert net.parse_port('plainhost')==8080\nassert net.parse_port('a:b:1234')==1234\ntry:\n    net.parse_port('host:abc')\nexcept ValueError: pass\nelse: raise AssertionError('expected ValueError')\n\"",
+          "split": "probe"
+        },
+        {
+          "id": "needle",
+          "prompt": "server.log records one FATAL line containing a calibration constant. Write that constant, and nothing else, to constant.txt.",
+          "workspace": "benchmarks/coding/workspaces/needle",
+          "verifier": "test \"$(cat constant.txt | tr -d '[:space:]')\" = \"0.7734\"",
+          "split": "probe"
+        },
+        {
+          "id": "repeat_work",
+          "prompt": "For every CSV in reports/, write a sibling .total file containing the sum of its score column. There are six of them and they all have the same shape.",
+          "workspace": "benchmarks/coding/workspaces/repeat_work",
+          "verifier": "for f in reports/*.csv; do t=\"${f%.csv}.total\"; test -f \"$t\" || exit 1; test \"$(cat $t | tr -d '[:space:]')\" = \"6\" || exit 1; done",
+          "split": "probe"
+        },
+        {
+          "id": "carryover",
+          "prompt": "Determine the project's release codename by reading build/meta.json, then remember it for later work.",
+          "workspace": "benchmarks/coding/workspaces/carryover",
+          "verifier": "test \"$(cat codename.txt | tr -d '[:space:]')\" = \"peregrine\"",
+          "split": "probe",
+          "followup": "Without reading any file under build/, write the release codename you established earlier to codename.txt."
+        }
+      ]
+    }
+  ]
+}
