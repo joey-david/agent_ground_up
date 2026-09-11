@@ -26,12 +26,12 @@ scripts/           run / evolve / train
 tests/ docs/       reference tests; implementation boundary
 ```
 
-## Run it
+## Running
 
-The backend runs natively on the `upnquick` compute node (2x A100 80GB, shared, unprivileged, no
-container runtime); the laptop reaches it over an SSH tunnel.
+The backend runs natively on a default compute node (2x A100 80GB, shared, unprivileged, no
+container runtime); in my case, my laptop reaches it via an ssh tunnel, but this can all be adjusted fairly easily, e.g. to run via API.
 
-**The node's checkout is not this working copy.** `~/agent-ground-up` on the node can lag behind
+In my case, `~/agent-ground-up` on the node can lag behind
 this branch and may not contain `infra/upnquick/` at all, in which case the launcher below fails
 with `No such file or directory`. Ship the two scripts once, then launch from where you put them:
 
@@ -45,27 +45,11 @@ ssh upnquick 'cd ~/tmp/agent-vllm && setsid nohup env GPUS=0 PORT=8011 \
 `setsid nohup ... &` matters: `serve.sh` polls for readiness for up to fifteen minutes, so running
 it in the foreground holds the SSH session open for the whole model load. Weights take a few
 minutes off NFS on a cold cache; poll readiness through the tunnel with
-`curl -s http://127.0.0.1:8020/v1/models`, not with more SSH.
+`curl -s http://127.0.0.1:8020/v1/models`.
 
-A second card doubles throughput for evaluation sweeps. Give it its own port, run directory and
-tunnel:
-
-```bash
-ssh upnquick 'cd ~/tmp/agent-vllm && setsid nohup env GPUS=1 PORT=8012 \
-    RUNDIR=$HOME/tmp/agent-vllm2 ./serve.sh </dev/null >serve2.out 2>&1 &'
-ssh -f -N -L 127.0.0.1:8022:127.0.0.1:8012 upnquick
-```
-
-Then drive it from the laptop. **Always export `HF_HUB_OFFLINE=1`**: without it the processor load
+**Always export `HF_HUB_OFFLINE=1`**: without it the processor load
 blocks on a Hugging Face Hub network call and the run can sit for tens of minutes producing nothing
-but an "unauthenticated requests" warning, which looks exactly like a hung GPU.
-
-```bash
-API_KEY=EMPTY HF_HUB_OFFLINE=1 uv run python scripts/run.py 'Fix the failing test and verify it.'
-API_KEY=EMPTY HF_HUB_OFFLINE=1 uv run python scripts/evolve.py --rounds 3 --unsafe-local
-```
-
-Hand both cards back when you are done; they are shared, and the stop script reports what is left:
+but an "unauthenticated requests" warning and the stop script reports what is left:
 
 ```bash
 ssh upnquick 'PORT=8011 ~/tmp/agent-vllm/stop.sh; PORT=8012 ~/tmp/agent-vllm/stop.sh'
@@ -75,7 +59,7 @@ Failure modes: `infra/upnquick/README.md`. `configs/astra.yaml` is the provider-
 continuous-state alternative. `--unsafe-local` runs candidate code on the host and suits the bundled
 smoke fixtures only; real descendants belong inside the sandbox boundary.
 
-## Measure it
+## Benchmarking
 
 `benchmarks/coding/` holds 41 verifiable tasks in five splits — `train`, `heldout`, `hard`, `hard2`
 and `probe` — each a small workspace plus a verifier scored by exit code. `scripts/prompt_search.py`
@@ -98,13 +82,9 @@ Pin `--temperature 0` for any A/B: the served default is nonzero, and one sample
 tell a prompt effect from a dice roll. `--context-window` must stay comfortably above
 `--max-tool-output-tokens`, or a single large observation overflows the window on its own.
 
-## Learn it
+## Implementing it yourself
 
-Three orders through the same ~2.5k lines. Pick by what you want out of it; each file is listed
-where it first earns its keep.
-
-**A — Follow one task through the system.** The recommended first pass: you watch the loop run
-before reading anything that supports it.
+**A — Follow one task through the system.**
 
 1. `scripts/run.py` — how a config, a workspace, and a prompt become a live `Agent`.
 2. `agent.py`, top half — `run` → `_run` → `_turn` → `_execute`. One loop drives both runtimes;
@@ -131,13 +111,10 @@ and read outward from the objective: `tasks.py` (families, splits, frontier) →
 (fixed held-out scoring) → `archive.py` (immutable descendants, novelty) → `improve.py` (the
 round) → `loss.py` (the clipped DAPO/GRPO objective, derived by hand) → `scripts/train.py`.
 
-Whichever order you take, `tests/` is the specification. When a file stops making sense, read its
-test first — that is what the reconstruction drills below are graded against.
-
 ## Replicate it
 
 Everything under `infra/` is prepared off-camera and sits outside the ~140–160 minute budget
-(`docs/video-plan.md`). You reconstruct the kernel, not the backend.
+(`docs/video-plan.md`).
 
 **First, make the reference green** so the tests are a trustworthy answer key:
 
@@ -158,11 +135,11 @@ uv sync --extra dev --extra sandbox && uv run pytest -q
    clipped DAPO/GRPO-style objective) → `config.yaml` (profile schema and values).
    Check with `uv run pytest -q practice/implementation/tests`.
 
-2. **`practice/signatures/`** — the same files, empty. Write *only* signatures and annotations;
+2. **`practice/signatures/`** — the same files, empty. Write _only_ signatures and annotations;
    bodies may be `...`. Tests compare the AST against drill 1, so they check names, kinds, defaults
    and types without executing anything. Check with `uv run pytest -q practice/signatures/tests`.
 
-3. **Blank directory, timed, `agent_ground_up/` unopened.** The drills exist to make this boring.
+3. **Blank directory, timed, `agent_ground_up/` unopened.**
 
 Prompts in `practice/cards.md`, per-workspace notes in `practice/README.md`.
 
