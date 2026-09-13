@@ -112,6 +112,7 @@ def run_case(
         toolbox = Toolbox(
             workdir,
             max_output_tokens=max_tool_output_tokens or agent_config["max_tool_output_tokens"],
+            patch_size=section(config, "model").get("patch_size", 32),
             token_counter=lambda text: len(
                 processor.tokenizer.encode(text, add_special_tokens=False)
             ),

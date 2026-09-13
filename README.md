@@ -55,9 +55,8 @@ but an "unauthenticated requests" warning and the stop script reports what is le
 ssh upnquick 'PORT=8011 ~/tmp/agent-vllm/stop.sh; PORT=8012 ~/tmp/agent-vllm/stop.sh'
 ```
 
-Failure modes: `infra/upnquick/README.md`. `configs/astra.yaml` is the provider-native
-continuous-state alternative. `--unsafe-local` runs candidate code on the host and suits the bundled
-smoke fixtures only; real descendants belong inside the sandbox boundary.
+Failure modes: `infra/upnquick/README.md`. `--unsafe-local` runs candidate code on the host and
+suits the bundled smoke fixtures only; real descendants belong inside the sandbox boundary.
 
 ## Benchmarking
 

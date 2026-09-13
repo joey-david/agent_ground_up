@@ -55,7 +55,12 @@ def main() -> None:
     agent = Agent(
         bundle.client,
         model_config["served_name"],
-        Toolbox(workdir, max_output_tokens=agent_config["max_tool_output_tokens"], token_counter=bundle.token_counter),
+        Toolbox(
+            workdir,
+            max_output_tokens=agent_config["max_tool_output_tokens"],
+            patch_size=model_config.get("patch_size", 32),
+            token_counter=bundle.token_counter,
+        ),
         bundle.processor,
         context_window=model_config["context_window"],
         compact_at=agent_config["compact_at"],

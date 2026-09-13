@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import argparse
 import json
 import os
@@ -20,7 +19,9 @@ DEFAULT_CURRICULUM = "tests/fixtures/evolution/smoke_curriculum.json"
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Recursively specialize the agent on frontier tasks")
+    parser = argparse.ArgumentParser(
+        description="Recursively specialize the agent on frontier tasks"
+    )
     parser.add_argument("--curriculum", default=DEFAULT_CURRICULUM, help="JSON task-family file")
     parser.add_argument("--config", default=os.getenv("AGENT_CONFIG", str(DEFAULT_CONFIG)))
     parser.add_argument("--rounds", type=int, default=1)
@@ -28,7 +29,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--archive", default="state/archive")
     parser.add_argument("--memory", default="state/evolution-memory")
     parser.add_argument("--repository-root", default=".")
-    parser.add_argument("--unsafe-local", action="store_true", help="allow candidate Python to execute on the host; smoke tests only")
+    parser.add_argument(
+        "--unsafe-local",
+        action="store_true",
+        help="allow candidate Python to execute on the host; smoke tests only",
+    )
     return parser.parse_args()
 
 
@@ -43,7 +48,12 @@ def build_edit_agent(config_path: str | Path):
         agent = Agent(
             local_bundle.client,
             model_config["served_name"],
-            Toolbox(worktree, max_output_tokens=agent_config["max_tool_output_tokens"], token_counter=local_bundle.token_counter),
+            Toolbox(
+                worktree,
+                max_output_tokens=agent_config["max_tool_output_tokens"],
+                patch_size=model_config.get("patch_size", 32),
+                token_counter=local_bundle.token_counter,
+            ),
             local_bundle.processor,
             context_window=model_config["context_window"],
             compact_at=agent_config["compact_at"],

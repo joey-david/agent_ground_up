@@ -103,10 +103,14 @@ class Toolbox:
         workdir: str | Path,
         *,
         max_output_tokens: int = 8192,
+        patch_size: int = 32,
         token_counter: Callable[[str], int] | None = None,
     ) -> None:
         self.workdir = Path(workdir).expanduser().resolve()
         self.max_output_tokens = max_output_tokens
+        # Vision tiling grid: an image's cost scales with patch_size x patch_size pixel patches,
+        # so the value follows the configured model's encoder rather than the workspace.
+        self.patch_size = patch_size
         self.token_counter = token_counter or (lambda text: len(text.encode("utf-8")))
 
     def bash(self, command: str, timeout_s: int = 120) -> ToolResult:
@@ -156,7 +160,6 @@ class Toolbox:
         image_path = (self.workdir / path).resolve(strict=True)
         if not image_path.is_relative_to(self.workdir):
             raise ValueError("Image must be inside the workspace")
-        size = image_path.stat().st_size
         with Image.open(image_path) as image:
             image.verify()
             width, height = image.size
@@ -165,41 +168,43 @@ class Toolbox:
                 or mimetypes.guess_type(image_path.name)[0]
                 or "image/png"
             )
-        encoded = base64.b64encode(image_path.read_bytes()).decode("ascii")
-        if self.token_counter(encoded) > self.max_output_tokens:
-            encoded, width, height, mime = self._shrink(image_path)
+        if self._patch_count(width, height) <= self.max_output_tokens:
+            data = image_path.read_bytes()
+        else:
+            data, width, height, mime = self._shrink(image_path, width, height)
+        encoded = base64.b64encode(data).decode("ascii")
         return ImageResult(
             str(image_path.relative_to(self.workdir)),
             mime,
             width,
             height,
-            size,
+            len(data),
             f"data:{mime};base64,{encoded}",
         )
 
-    def _shrink(self, image_path: Path) -> tuple[str, int, int, str]:
-        """Halve an oversized image until its payload fits the same budget bash output gets.
+    def _patch_count(self, width: int, height: int) -> int:
+        """Approximate vision-token cost the way tiling encoders bill it: by patch, not byte."""
+        patch = self.patch_size
+        return -(-width // patch) * -(-height // patch)
 
-        An image arrives as one base64 blob, so unlike shell output it cannot be cut in the
-        middle: without this an ordinary screenshot can outweigh the whole context window in a
-        single observation, and no tool-output setting would bound it.
+    def _shrink(self, image_path: Path, width: int, height: int) -> tuple[bytes, int, int, str]:
+        """Resize once to the largest size whose patch grid fits the token budget.
+
+        Solved analytically from the patch-count budget (area scales with the square of the
+        scale factor) instead of repeatedly halving and re-encoding to see what fits. The area
+        formula alone can overshoot by a fraction of a patch at the grid edges, so the scale is
+        nudged down to the nearest whole patch per side before it's applied.
         """
+        patch = self.patch_size
+        scale = ((self.max_output_tokens * patch * patch) / (width * height)) ** 0.5
+        patches_wide, patches_high = width * scale / patch, height * scale / patch
+        scale *= min(int(patches_wide) / patches_wide, int(patches_high) / patches_high)
+        width, height = max(1, int(width * scale)), max(1, int(height * scale))
         with Image.open(image_path) as original:
-            image = original.convert("RGB")
-        while True:
-            buffer = io.BytesIO()
-            image.save(buffer, format="JPEG", quality=80)
-            encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
-            if self.token_counter(encoded) <= self.max_output_tokens:
-                return encoded, image.width, image.height, "image/jpeg"
-            if min(image.size) <= 16:
-                # Refusing is the honest outcome: the caller turns this into an observation the
-                # agent can act on, where returning it anyway would silently blow the window.
-                raise ValueError(
-                    "image cannot be reduced to fit the tool output budget; "
-                    "raise max_tool_output_tokens or shrink the file"
-                )
-            image = image.resize((max(1, image.width // 2), max(1, image.height // 2)))
+            image = original.convert("RGB").resize((width, height), Image.Resampling.LANCZOS)
+        buffer = io.BytesIO()
+        image.save(buffer, format="JPEG", quality=85)
+        return buffer.getvalue(), width, height, "image/jpeg"
 
     def _truncate(self, text: str) -> tuple[str, int]:
         """Fit output to a token budget while preserving its head and tail."""

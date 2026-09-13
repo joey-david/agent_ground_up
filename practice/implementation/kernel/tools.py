@@ -47,6 +47,7 @@ class Toolbox:
         workdir: str | Path,
         *,
         max_output_tokens: int = 8192,
+        patch_size: int = 32,
         token_counter: Callable[[str], int] | None = None,
     ) -> None:
         raise NotImplementedError
