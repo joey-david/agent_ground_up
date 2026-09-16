@@ -90,9 +90,11 @@ class Archive:
         return ArchiveEntry(**json.loads(path.read_text(encoding="utf-8")))
 
     def select_parent(self, *, family: str | None = None, exploration: float = 0.20) -> ArchiveEntry:
-        candidates = [entry for entry in self.entries() if family is None or entry.family == family]
+        entries = self.entries()
+        candidates = [entry for entry in entries if family is None or entry.family == family]
         if not candidates:
             raise ValueError("archive has no eligible parent")
+        exploration = self._dream_exploration(entries, exploration)
         visits = self._child_counts()
 
         def value(entry: ArchiveEntry) -> tuple[float, str]:
@@ -100,6 +102,52 @@ class Archive:
             return entry.score + 0.25 * entry.novelty + branch_bonus, entry.id
 
         return max(candidates, key=value)
+
+    def _dream_exploration(self, entries: list[ArchiveEntry], fallback: float) -> float:
+        if len(entries) < 3:
+            return fallback
+        choices = (fallback, 0.05, 0.10, 0.50, 1.00)
+        return max(choices, key=lambda value: self._replay_score(entries, value))
+
+    @staticmethod
+    def _replay_score(entries: list[ArchiveEntry], exploration: float) -> float:
+        worlds: dict[str, list[ArchiveEntry]] = {}
+        for entry in entries:
+            worlds.setdefault(entry.family, []).append(entry)
+        utility = 0.0
+        for world in worlds.values():
+            roots = [entry for entry in world if entry.parent_id is None]
+            if not roots:
+                continue
+            children: dict[str, list[ArchiveEntry]] = {}
+            for entry in world:
+                if entry.parent_id:
+                    children.setdefault(entry.parent_id, []).append(entry)
+            known = {entry.id: entry for entry in roots}
+            visits: dict[str, int] = {}
+            baseline = best = max(entry.score for entry in roots)
+            budget = len(world) - len(roots)
+            area = 0.0
+            for _ in range(budget):
+                parent = max(
+                    known.values(),
+                    key=lambda entry: (
+                        entry.score + 0.25 * entry.novelty
+                        + exploration / ((visits.get(entry.id, 0) + 1) ** 0.5),
+                        entry.id,
+                    ),
+                )
+                branch = children.get(parent.id, ())
+                seen = visits.get(parent.id, 0)
+                if seen >= len(branch):
+                    break
+                child = branch[seen]
+                visits[parent.id] = seen + 1
+                known[child.id] = child
+                best = max(best, child.score)
+                area += best - baseline
+            utility += area / max(1, budget)
+        return utility
 
     def materialize(self, entry_id: str, destination: str | Path) -> Path:
         source = self.root / entry_id
