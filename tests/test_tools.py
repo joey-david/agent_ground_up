@@ -42,23 +42,24 @@ def test_view_image_is_multimodal_and_confined(tmp_path: Path) -> None:
         Toolbox(tmp_path).view_image("../outside.png")
 
 
-def test_view_image_shrinks_a_payload_that_would_not_fit(tmp_path: Path) -> None:
-    # Noise resists compression, so the encoded payload is genuinely large.
+def test_view_image_shrinks_an_oversized_patch_grid(tmp_path: Path) -> None:
+    # The budget is now a patch-grid cap (32x32 pixels each), not a byte-length cap: what
+    # matters is how the vision encoder would tile the image, not how big its base64 is.
     noisy = Image.frombytes("RGB", (400, 400), os.urandom(400 * 400 * 3))
     noisy.save(tmp_path / "big.png")
-    toolbox = Toolbox(tmp_path, max_output_tokens=4000, token_counter=len)
+    toolbox = Toolbox(tmp_path, max_output_tokens=100)
 
     result = toolbox.view_image("big.png")
-    payload = result.data_url.split(",", 1)[1]
+    patches = -(-result.width // 32) * -(-result.height // 32)
 
-    assert len(payload) <= 4000
+    assert patches <= 100
     assert result.width < 400 and result.height < 400
     assert result.mime_type == "image/jpeg"
 
 
 def test_view_image_leaves_a_small_payload_untouched(tmp_path: Path) -> None:
     Image.new("RGB", (8, 8), "white").save(tmp_path / "small.png")
-    toolbox = Toolbox(tmp_path, max_output_tokens=100_000, token_counter=len)
+    toolbox = Toolbox(tmp_path, max_output_tokens=100_000)
 
     result = toolbox.view_image("small.png")
 
@@ -66,10 +67,13 @@ def test_view_image_leaves_a_small_payload_untouched(tmp_path: Path) -> None:
     assert result.mime_type == "image/png"
 
 
-def test_view_image_refuses_when_no_size_fits_the_budget(tmp_path: Path) -> None:
+def test_view_image_shrinks_to_the_smallest_size_at_a_tiny_budget(tmp_path: Path) -> None:
+    # Unlike a byte-length budget, a patch budget always has a size that fits, so an extreme
+    # budget shrinks the image instead of raising. One patch covers up to 32x32 pixels.
     noisy = Image.frombytes("RGB", (400, 400), os.urandom(400 * 400 * 3))
     noisy.save(tmp_path / "big.png")
-    toolbox = Toolbox(tmp_path, max_output_tokens=50, token_counter=len)
+    toolbox = Toolbox(tmp_path, max_output_tokens=1)
 
-    with pytest.raises(ValueError, match="tool output budget"):
-        toolbox.view_image("big.png")
+    result = toolbox.view_image("big.png")
+
+    assert result.width <= 32 and result.height <= 32

@@ -1,16 +1,16 @@
 model:
-  runtime: "<fill>"
-  served_name: "<fill>"
-  base_url: "<fill>"
+  runtime: chat_completions
+  served_name: Qwen/Qwen3.6-27B
+  base_url: http://127.0.0.1:8020/v1
   context_window: 0
 
 agent:
   max_steps: 0
   max_output_tokens: 0
   max_tool_output_tokens: 0
-  memory_dir: "<fill>"
-  experience_dir: "<fill>"
-  skills_dir: "<fill>"
+  memory_dir: state/memory
+  experience_dir: state/experience
+  skills_dir: skills
 
 evolution:
   target: 0.0

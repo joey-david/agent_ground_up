@@ -185,7 +185,7 @@ class Toolbox:
     def _patch_count(self, width: int, height: int) -> int:
         """Approximate vision-token cost the way tiling encoders bill it: by patch, not byte."""
         patch = self.patch_size
-        return -(-width // patch) * -(-height // patch)
+        return (width // patch) * (height // patch)
 
     def _shrink(self, image_path: Path, width: int, height: int) -> tuple[bytes, int, int, str]:
         """Resize once to the largest size whose patch grid fits the token budget.

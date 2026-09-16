@@ -1,4 +1,4 @@
-from __future__ import annotations
+from __future__ import annotationsA
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -8,7 +8,11 @@ SummaryFn = Callable[[list[str]], str]
 
 
 def elide(text: str, limit: int) -> str:
-    raise NotImplementedError
+    """Crop the middle of an overly long string"""
+    if len(text) <= limit:
+        return text
+    half = max(1, limit - 5 // 2)
+    return text[:half].rstrip() + " ... " + text[-half:].lstrip()
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,10 +44,26 @@ class ConstantMemory:
         record_chars: int = 1200,
         summarizer: SummaryFn | None = None,
     ) -> None:
-        raise NotImplementedError
+        if wake_records < 0 or leaf_size < 1 or summary_chars < 80 or record_chars < 80:
+            raise ValueError("invalid mem sizing")
+        self.root = Path(root).expanduser().resolve()
+        self.root.mkdir(parents=True, exist_ok=True)
+        self.events_path = self.root / "events.jsonl"
+        self.tree_path = self.root / "tree.json"
+        self.wake_records = wake_records
+        self.leaf_size = leaf_size
+        self.summary_chars = summary_chars
+        self.record_chars = record_chars
+        self.summarizer = summarizer or self._default_summary
 
     def remember(self, text: str, tags: Iterable[str] = ()) -> MemoryRecord:
-        raise NotImplementedError
+        """Append one durable memory and rebuild the compact summary index"""
+        text = text.strip()
+        if not text:
+            raise ValueError("memory text cannot be empty")
+        text = elide(text, self.record_chars)
+        records = self.records()
+        record = MemoryRecord
 
     def records(self) -> list[MemoryRecord]:
         raise NotImplementedError
