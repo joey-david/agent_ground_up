@@ -20,4 +20,11 @@ if lsof -nP -iTCP:"${LOCAL_PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
 fi
 
 echo "forwarding 127.0.0.1:${LOCAL_PORT} -> ${REMOTE_HOST}:${REMOTE_PORT}"
-exec ssh -N -L "127.0.0.1:${LOCAL_PORT}:127.0.0.1:${REMOTE_PORT}" "${REMOTE_HOST}"
+
+# A long sweep keeps the forward busy for hours, and a silent drop surfaces as
+# APIConnectionError in the middle of an episode rather than as an ssh error. Keepalives
+# detect a dead peer, and ExitOnForwardFailure refuses to sit there forwarding nothing.
+exec ssh -N \
+  -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
+  -o ExitOnForwardFailure=yes \
+  -L "127.0.0.1:${LOCAL_PORT}:127.0.0.1:${REMOTE_PORT}" "${REMOTE_HOST}"

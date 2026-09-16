@@ -1,0 +1,94 @@
+{
+ "families": [
+  {
+   "name": "livecodebench",
+   "description": "LiveCodeBench release v6, medium stdin problems.",
+   "cases": [
+    {
+     "id": "lcb_atcoder_abc387_c",
+     "prompt": "Solve the programming problem described in problem.md.\n\nWrite your solution to solution.py. It must read the input from standard input and print the\nanswer to standard output, exactly in the format the problem specifies.\n\nThe sample cases from the statement are in tests/ and `python3 run_samples.py` checks them.\nYour solution is graded on hidden tests as well, including large inputs, so make sure the\nalgorithm is efficient enough for the stated constraints rather than only passing the samples.",
+     "verifier": "python3 /Users/joey/projects/youtube/agent_ground_up/benchmarks/livecodebench/verify.py /Users/joey/projects/youtube/agent_ground_up/benchmarks/livecodebench/data/hidden/lcb_atcoder_abc387_c.json solution.py",
+     "workspace": "benchmarks/livecodebench/workspaces/lcb_atcoder_abc387_c",
+     "split": "lcb"
+    },
+    {
+     "id": "lcb_atcoder_abc388_c",
+     "prompt": "Solve the programming problem described in problem.md.\n\nWrite your solution to solution.py. It must read the input from standard input and print the\nanswer to standard output, exactly in the format the problem specifies.\n\nThe sample cases from the statement are in tests/ and `python3 run_samples.py` checks them.\nYour solution is graded on hidden tests as well, including large inputs, so make sure the\nalgorithm is efficient enough for the stated constraints rather than only passing the samples.",
+     "verifier": "python3 /Users/joey/projects/youtube/agent_ground_up/benchmarks/livecodebench/verify.py /Users/joey/projects/youtube/agent_ground_up/benchmarks/livecodebench/data/hidden/lcb_atcoder_abc388_c.json solution.py",
+     "workspace": "benchmarks/livecodebench/workspaces/lcb_atcoder_abc388_c",
+     "split": "lcb"
+    },
+    {
+     "id": "lcb_atcoder_abc388_d",
+     "prompt": "Solve the programming problem described in problem.md.\n\nWrite your solution to solution.py. It must read the input from standard input and print the\nanswer to standard output, exactly in the format the problem specifies.\n\nThe sample cases from the statement are in tests/ and `python3 run_samples.py` checks them.\nYour solution is graded on hidden tests as well, including large inputs, so make sure the\nalgorithm is efficient enough for the stated constraints rather than only passing the samples.",
+     "verifier": "python3 /Users/joey/projects/youtube/agent_ground_up/benchmarks/livecodebench/verify.py /Users/joey/projects/youtube/agent_ground_up/benchmarks/livecodebench/data/hidden/lcb_atcoder_abc388_d.json solution.py",
+     "workspace": "benchmarks/livecodebench/workspaces/lcb_atcoder_abc388_d",
+     "split": "lcb"
+    },
+    {
+     "id": "lcb_atcoder_abc389_d",
+     "prompt": "Solve the programming problem described in problem.md.\n\nWrite your solution to solution.py. It must read the input from standard input and print the\nanswer to standard output, exactly in the format the problem specifies.\n\nThe sample cases from the statement are in tests/ and `python3 run_samples.py` checks them.\nYour solution is graded on hidden tests as well, including large inputs, so make sure the\nalgorithm is efficient enough for the stated constraints rather than only passing the samples.",
+     "verifier": "python3 /Users/joey/projects/youtube/agent_ground_up/benchmarks/livecodebench/verify.py /Users/joey/projects/youtube/agent_ground_up/benchmarks/livecodebench/data/hidden/lcb_atcoder_abc389_d.json solution.py",
+     "workspace": "benchmarks/livecodebench/workspaces/lcb_atcoder_abc389_d",
+     "split": "lcb"
+    },
+    {
+     "id": "lcb_atcoder_abc390_c",
+     "prompt": "Solve the programming problem described in problem.md.\n\nWrite your solution to solution.py. It must read the input from standard input and print the\nanswer to standard output, exactly in the format the problem specifies.\n\nThe sample cases from the statement are in tests/ and `python3 run_samples.py` checks them.\nYour solution is graded on hidden tests as well, including large inputs, so make sure the\nalgorithm is efficient enough for the stated constraints rather than only passing the samples.",
+     "verifier": "python3 /Users/joey/projects/youtube/agent_ground_up/benchmarks/livecodebench/verify.py /Users/joey/projects/youtube/agent_ground_up/benchmarks/livecodebench/data/hidden/lcb_atcoder_abc390_c.json solution.py",
+     "workspace": "benchmarks/livecodebench/workspaces/lcb_atcoder_abc390_c",
+     "split": "lcb"
+    },
+    {
+     "id": "lcb_atcoder_abc390_d",
+     "prompt": "Solve the programming problem described in problem.md.\n\nWrite your solution to solution.py. It must read the input from standard input and print the\nanswer to standard output, exactly in the format the problem specifies.\n\nThe sample cases from the statement are in tests/ and `python3 run_samples.py` checks them.\nYour solution is graded on hidden tests as well, including large inputs, so make sure the\nalgorithm is efficient enough for the stated constraints rather than only passing the samples.",
+     "verifier": "python3 /Users/joey/projects/youtube/agent_ground_up/benchmarks/livecodebench/verify.py /Users/joey/projects/youtube/agent_ground_up/benchmarks/livecodebench/data/hidden/lcb_atcoder_abc390_d.json solution.py",
+     "workspace": "benchmarks/livecodebench/workspaces/lcb_atcoder_abc390_d",
+     "split": "lcb"
+    },
+    {
+     "id": "lcb_atcoder_abc391_d",
+     "prompt": "Solve the programming problem described in problem.md.\n\nWrite your solution to solution.py. It must read the input from standard input and print the\nanswer to standard output, exactly in the format the problem specifies.\n\nThe sample cases from the statement are in tests/ and `python3 run_samples.py` checks them.\nYour solution is graded on hidden tests as well, including large inputs, so make sure the\nalgorithm is efficient enough for the stated constraints rather than only passing the samples.",
+     "verifier": "python3 /Users/joey/projects/youtube/agent_ground_up/benchmarks/livecodebench/verify.py /Users/joey/projects/youtube/agent_ground_up/benchmarks/livecodebench/data/hidden/lcb_atcoder_abc391_d.json solution.py",
+     "workspace": "benchmarks/livecodebench/workspaces/lcb_atcoder_abc391_d",
+     "split": "lcb"
+    },
+    {
+     "id": "lcb_atcoder_abc392_c",
+     "prompt": "Solve the programming problem described in problem.md.\n\nWrite your solution to solution.py. It must read the input from standard input and print the\nanswer to standard output, exactly in the format the problem specifies.\n\nThe sample cases from the statement are in tests/ and `python3 run_samples.py` checks them.\nYour solution is graded on hidden tests as well, including large inputs, so make sure the\nalgorithm is efficient enough for the stated constraints rather than only passing the samples.",
+     "verifier": "python3 /Users/joey/projects/youtube/agent_ground_up/benchmarks/livecodebench/verify.py /Users/joey/projects/youtube/agent_ground_up/benchmarks/livecodebench/data/hidden/lcb_atcoder_abc392_c.json solution.py",
+     "workspace": "benchmarks/livecodebench/workspaces/lcb_atcoder_abc392_c",
+     "split": "lcb"
+    },
+    {
+     "id": "lcb_atcoder_abc392_d",
+     "prompt": "Solve the programming problem described in problem.md.\n\nWrite your solution to solution.py. It must read the input from standard input and print the\nanswer to standard output, exactly in the format the problem specifies.\n\nThe sample cases from the statement are in tests/ and `python3 run_samples.py` checks them.\nYour solution is graded on hidden tests as well, including large inputs, so make sure the\nalgorithm is efficient enough for the stated constraints rather than only passing the samples.",
+     "verifier": "python3 /Users/joey/projects/youtube/agent_ground_up/benchmarks/livecodebench/verify.py /Users/joey/projects/youtube/agent_ground_up/benchmarks/livecodebench/data/hidden/lcb_atcoder_abc392_d.json solution.py",
+     "workspace": "benchmarks/livecodebench/workspaces/lcb_atcoder_abc392_d",
+     "split": "lcb"
+    },
+    {
+     "id": "lcb_atcoder_abc394_c",
+     "prompt": "Solve the programming problem described in problem.md.\n\nWrite your solution to solution.py. It must read the input from standard input and print the\nanswer to standard output, exactly in the format the problem specifies.\n\nThe sample cases from the statement are in tests/ and `python3 run_samples.py` checks them.\nYour solution is graded on hidden tests as well, including large inputs, so make sure the\nalgorithm is efficient enough for the stated constraints rather than only passing the samples.",
+     "verifier": "python3 /Users/joey/projects/youtube/agent_ground_up/benchmarks/livecodebench/verify.py /Users/joey/projects/youtube/agent_ground_up/benchmarks/livecodebench/data/hidden/lcb_atcoder_abc394_c.json solution.py",
+     "workspace": "benchmarks/livecodebench/workspaces/lcb_atcoder_abc394_c",
+     "split": "lcb"
+    },
+    {
+     "id": "lcb_atcoder_abc394_d",
+     "prompt": "Solve the programming problem described in problem.md.\n\nWrite your solution to solution.py. It must read the input from standard input and print the\nanswer to standard output, exactly in the format the problem specifies.\n\nThe sample cases from the statement are in tests/ and `python3 run_samples.py` checks them.\nYour solution is graded on hidden tests as well, including large inputs, so make sure the\nalgorithm is efficient enough for the stated constraints rather than only passing the samples.",
+     "verifier": "python3 /Users/joey/projects/youtube/agent_ground_up/benchmarks/livecodebench/verify.py /Users/joey/projects/youtube/agent_ground_up/benchmarks/livecodebench/data/hidden/lcb_atcoder_abc394_d.json solution.py",
+     "workspace": "benchmarks/livecodebench/workspaces/lcb_atcoder_abc394_d",
+     "split": "lcb"
+    },
+    {
+     "id": "lcb_atcoder_abc395_c",
+     "prompt": "Solve the programming problem described in problem.md.\n\nWrite your solution to solution.py. It must read the input from standard input and print the\nanswer to standard output, exactly in the format the problem specifies.\n\nThe sample cases from the statement are in tests/ and `python3 run_samples.py` checks them.\nYour solution is graded on hidden tests as well, including large inputs, so make sure the\nalgorithm is efficient enough for the stated constraints rather than only passing the samples.",
+     "verifier": "python3 /Users/joey/projects/youtube/agent_ground_up/benchmarks/livecodebench/verify.py /Users/joey/projects/youtube/agent_ground_up/benchmarks/livecodebench/data/hidden/lcb_atcoder_abc395_c.json solution.py",
+     "workspace": "benchmarks/livecodebench/workspaces/lcb_atcoder_abc395_c",
+     "split": "lcb"
+    }
+   ]
+  }
+ ]
+}

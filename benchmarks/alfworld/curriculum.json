@@ -1,0 +1,136 @@
+{
+ "families": [
+  {
+   "name": "alfworld",
+   "description": "ALFWorld household tasks; six task types that recur.",
+   "cases": [
+    {
+     "id": "alfworld_00_pick_and_place_simple",
+     "prompt": "You are playing a text-based household game. Your task is stated in task.md.\n\nInteract with the game through the command line:\n\n    python3 act.py <action>     take one action, for example: python3 act.py go to fridge 1\n    python3 act.py --look       repeat the current observation without using a turn\n    python3 act.py --commands   list the actions the game will accept right now\n\nOnly actions the game accepts do anything; anything else wastes a turn and it tells you so.\nYou have a limited number of turns, shown after every action. The episode is finished when the\nstatus line says the task is won, and that is the only thing that counts as success.",
+     "verifier": "python3 act.py --status",
+     "workspace": "benchmarks/alfworld/workspaces/alfworld_00_pick_and_place_simple",
+     "split": "alfworld"
+    },
+    {
+     "id": "alfworld_01_look_at_obj_in_light",
+     "prompt": "You are playing a text-based household game. Your task is stated in task.md.\n\nInteract with the game through the command line:\n\n    python3 act.py <action>     take one action, for example: python3 act.py go to fridge 1\n    python3 act.py --look       repeat the current observation without using a turn\n    python3 act.py --commands   list the actions the game will accept right now\n\nOnly actions the game accepts do anything; anything else wastes a turn and it tells you so.\nYou have a limited number of turns, shown after every action. The episode is finished when the\nstatus line says the task is won, and that is the only thing that counts as success.",
+     "verifier": "python3 act.py --status",
+     "workspace": "benchmarks/alfworld/workspaces/alfworld_01_look_at_obj_in_light",
+     "split": "alfworld"
+    },
+    {
+     "id": "alfworld_02_pick_clean_then_place_in_recep",
+     "prompt": "You are playing a text-based household game. Your task is stated in task.md.\n\nInteract with the game through the command line:\n\n    python3 act.py <action>     take one action, for example: python3 act.py go to fridge 1\n    python3 act.py --look       repeat the current observation without using a turn\n    python3 act.py --commands   list the actions the game will accept right now\n\nOnly actions the game accepts do anything; anything else wastes a turn and it tells you so.\nYou have a limited number of turns, shown after every action. The episode is finished when the\nstatus line says the task is won, and that is the only thing that counts as success.",
+     "verifier": "python3 act.py --status",
+     "workspace": "benchmarks/alfworld/workspaces/alfworld_02_pick_clean_then_place_in_recep",
+     "split": "alfworld"
+    },
+    {
+     "id": "alfworld_03_pick_heat_then_place_in_recep",
+     "prompt": "You are playing a text-based household game. Your task is stated in task.md.\n\nInteract with the game through the command line:\n\n    python3 act.py <action>     take one action, for example: python3 act.py go to fridge 1\n    python3 act.py --look       repeat the current observation without using a turn\n    python3 act.py --commands   list the actions the game will accept right now\n\nOnly actions the game accepts do anything; anything else wastes a turn and it tells you so.\nYou have a limited number of turns, shown after every action. The episode is finished when the\nstatus line says the task is won, and that is the only thing that counts as success.",
+     "verifier": "python3 act.py --status",
+     "workspace": "benchmarks/alfworld/workspaces/alfworld_03_pick_heat_then_place_in_recep",
+     "split": "alfworld"
+    },
+    {
+     "id": "alfworld_04_pick_cool_then_place_in_recep",
+     "prompt": "You are playing a text-based household game. Your task is stated in task.md.\n\nInteract with the game through the command line:\n\n    python3 act.py <action>     take one action, for example: python3 act.py go to fridge 1\n    python3 act.py --look       repeat the current observation without using a turn\n    python3 act.py --commands   list the actions the game will accept right now\n\nOnly actions the game accepts do anything; anything else wastes a turn and it tells you so.\nYou have a limited number of turns, shown after every action. The episode is finished when the\nstatus line says the task is won, and that is the only thing that counts as success.",
+     "verifier": "python3 act.py --status",
+     "workspace": "benchmarks/alfworld/workspaces/alfworld_04_pick_cool_then_place_in_recep",
+     "split": "alfworld"
+    },
+    {
+     "id": "alfworld_05_pick_two_obj_and_place",
+     "prompt": "You are playing a text-based household game. Your task is stated in task.md.\n\nInteract with the game through the command line:\n\n    python3 act.py <action>     take one action, for example: python3 act.py go to fridge 1\n    python3 act.py --look       repeat the current observation without using a turn\n    python3 act.py --commands   list the actions the game will accept right now\n\nOnly actions the game accepts do anything; anything else wastes a turn and it tells you so.\nYou have a limited number of turns, shown after every action. The episode is finished when the\nstatus line says the task is won, and that is the only thing that counts as success.",
+     "verifier": "python3 act.py --status",
+     "workspace": "benchmarks/alfworld/workspaces/alfworld_05_pick_two_obj_and_place",
+     "split": "alfworld"
+    },
+    {
+     "id": "alfworld_06_pick_and_place_simple",
+     "prompt": "You are playing a text-based household game. Your task is stated in task.md.\n\nInteract with the game through the command line:\n\n    python3 act.py <action>     take one action, for example: python3 act.py go to fridge 1\n    python3 act.py --look       repeat the current observation without using a turn\n    python3 act.py --commands   list the actions the game will accept right now\n\nOnly actions the game accepts do anything; anything else wastes a turn and it tells you so.\nYou have a limited number of turns, shown after every action. The episode is finished when the\nstatus line says the task is won, and that is the only thing that counts as success.",
+     "verifier": "python3 act.py --status",
+     "workspace": "benchmarks/alfworld/workspaces/alfworld_06_pick_and_place_simple",
+     "split": "alfworld"
+    },
+    {
+     "id": "alfworld_07_look_at_obj_in_light",
+     "prompt": "You are playing a text-based household game. Your task is stated in task.md.\n\nInteract with the game through the command line:\n\n    python3 act.py <action>     take one action, for example: python3 act.py go to fridge 1\n    python3 act.py --look       repeat the current observation without using a turn\n    python3 act.py --commands   list the actions the game will accept right now\n\nOnly actions the game accepts do anything; anything else wastes a turn and it tells you so.\nYou have a limited number of turns, shown after every action. The episode is finished when the\nstatus line says the task is won, and that is the only thing that counts as success.",
+     "verifier": "python3 act.py --status",
+     "workspace": "benchmarks/alfworld/workspaces/alfworld_07_look_at_obj_in_light",
+     "split": "alfworld"
+    },
+    {
+     "id": "alfworld_08_pick_clean_then_place_in_recep",
+     "prompt": "You are playing a text-based household game. Your task is stated in task.md.\n\nInteract with the game through the command line:\n\n    python3 act.py <action>     take one action, for example: python3 act.py go to fridge 1\n    python3 act.py --look       repeat the current observation without using a turn\n    python3 act.py --commands   list the actions the game will accept right now\n\nOnly actions the game accepts do anything; anything else wastes a turn and it tells you so.\nYou have a limited number of turns, shown after every action. The episode is finished when the\nstatus line says the task is won, and that is the only thing that counts as success.",
+     "verifier": "python3 act.py --status",
+     "workspace": "benchmarks/alfworld/workspaces/alfworld_08_pick_clean_then_place_in_recep",
+     "split": "alfworld"
+    },
+    {
+     "id": "alfworld_09_pick_heat_then_place_in_recep",
+     "prompt": "You are playing a text-based household game. Your task is stated in task.md.\n\nInteract with the game through the command line:\n\n    python3 act.py <action>     take one action, for example: python3 act.py go to fridge 1\n    python3 act.py --look       repeat the current observation without using a turn\n    python3 act.py --commands   list the actions the game will accept right now\n\nOnly actions the game accepts do anything; anything else wastes a turn and it tells you so.\nYou have a limited number of turns, shown after every action. The episode is finished when the\nstatus line says the task is won, and that is the only thing that counts as success.",
+     "verifier": "python3 act.py --status",
+     "workspace": "benchmarks/alfworld/workspaces/alfworld_09_pick_heat_then_place_in_recep",
+     "split": "alfworld"
+    },
+    {
+     "id": "alfworld_10_pick_cool_then_place_in_recep",
+     "prompt": "You are playing a text-based household game. Your task is stated in task.md.\n\nInteract with the game through the command line:\n\n    python3 act.py <action>     take one action, for example: python3 act.py go to fridge 1\n    python3 act.py --look       repeat the current observation without using a turn\n    python3 act.py --commands   list the actions the game will accept right now\n\nOnly actions the game accepts do anything; anything else wastes a turn and it tells you so.\nYou have a limited number of turns, shown after every action. The episode is finished when the\nstatus line says the task is won, and that is the only thing that counts as success.",
+     "verifier": "python3 act.py --status",
+     "workspace": "benchmarks/alfworld/workspaces/alfworld_10_pick_cool_then_place_in_recep",
+     "split": "alfworld"
+    },
+    {
+     "id": "alfworld_11_pick_two_obj_and_place",
+     "prompt": "You are playing a text-based household game. Your task is stated in task.md.\n\nInteract with the game through the command line:\n\n    python3 act.py <action>     take one action, for example: python3 act.py go to fridge 1\n    python3 act.py --look       repeat the current observation without using a turn\n    python3 act.py --commands   list the actions the game will accept right now\n\nOnly actions the game accepts do anything; anything else wastes a turn and it tells you so.\nYou have a limited number of turns, shown after every action. The episode is finished when the\nstatus line says the task is won, and that is the only thing that counts as success.",
+     "verifier": "python3 act.py --status",
+     "workspace": "benchmarks/alfworld/workspaces/alfworld_11_pick_two_obj_and_place",
+     "split": "alfworld"
+    },
+    {
+     "id": "alfworld_12_pick_and_place_simple",
+     "prompt": "You are playing a text-based household game. Your task is stated in task.md.\n\nInteract with the game through the command line:\n\n    python3 act.py <action>     take one action, for example: python3 act.py go to fridge 1\n    python3 act.py --look       repeat the current observation without using a turn\n    python3 act.py --commands   list the actions the game will accept right now\n\nOnly actions the game accepts do anything; anything else wastes a turn and it tells you so.\nYou have a limited number of turns, shown after every action. The episode is finished when the\nstatus line says the task is won, and that is the only thing that counts as success.",
+     "verifier": "python3 act.py --status",
+     "workspace": "benchmarks/alfworld/workspaces/alfworld_12_pick_and_place_simple",
+     "split": "alfworld"
+    },
+    {
+     "id": "alfworld_13_look_at_obj_in_light",
+     "prompt": "You are playing a text-based household game. Your task is stated in task.md.\n\nInteract with the game through the command line:\n\n    python3 act.py <action>     take one action, for example: python3 act.py go to fridge 1\n    python3 act.py --look       repeat the current observation without using a turn\n    python3 act.py --commands   list the actions the game will accept right now\n\nOnly actions the game accepts do anything; anything else wastes a turn and it tells you so.\nYou have a limited number of turns, shown after every action. The episode is finished when the\nstatus line says the task is won, and that is the only thing that counts as success.",
+     "verifier": "python3 act.py --status",
+     "workspace": "benchmarks/alfworld/workspaces/alfworld_13_look_at_obj_in_light",
+     "split": "alfworld"
+    },
+    {
+     "id": "alfworld_14_pick_clean_then_place_in_recep",
+     "prompt": "You are playing a text-based household game. Your task is stated in task.md.\n\nInteract with the game through the command line:\n\n    python3 act.py <action>     take one action, for example: python3 act.py go to fridge 1\n    python3 act.py --look       repeat the current observation without using a turn\n    python3 act.py --commands   list the actions the game will accept right now\n\nOnly actions the game accepts do anything; anything else wastes a turn and it tells you so.\nYou have a limited number of turns, shown after every action. The episode is finished when the\nstatus line says the task is won, and that is the only thing that counts as success.",
+     "verifier": "python3 act.py --status",
+     "workspace": "benchmarks/alfworld/workspaces/alfworld_14_pick_clean_then_place_in_recep",
+     "split": "alfworld"
+    },
+    {
+     "id": "alfworld_15_pick_heat_then_place_in_recep",
+     "prompt": "You are playing a text-based household game. Your task is stated in task.md.\n\nInteract with the game through the command line:\n\n    python3 act.py <action>     take one action, for example: python3 act.py go to fridge 1\n    python3 act.py --look       repeat the current observation without using a turn\n    python3 act.py --commands   list the actions the game will accept right now\n\nOnly actions the game accepts do anything; anything else wastes a turn and it tells you so.\nYou have a limited number of turns, shown after every action. The episode is finished when the\nstatus line says the task is won, and that is the only thing that counts as success.",
+     "verifier": "python3 act.py --status",
+     "workspace": "benchmarks/alfworld/workspaces/alfworld_15_pick_heat_then_place_in_recep",
+     "split": "alfworld"
+    },
+    {
+     "id": "alfworld_16_pick_cool_then_place_in_recep",
+     "prompt": "You are playing a text-based household game. Your task is stated in task.md.\n\nInteract with the game through the command line:\n\n    python3 act.py <action>     take one action, for example: python3 act.py go to fridge 1\n    python3 act.py --look       repeat the current observation without using a turn\n    python3 act.py --commands   list the actions the game will accept right now\n\nOnly actions the game accepts do anything; anything else wastes a turn and it tells you so.\nYou have a limited number of turns, shown after every action. The episode is finished when the\nstatus line says the task is won, and that is the only thing that counts as success.",
+     "verifier": "python3 act.py --status",
+     "workspace": "benchmarks/alfworld/workspaces/alfworld_16_pick_cool_then_place_in_recep",
+     "split": "alfworld"
+    },
+    {
+     "id": "alfworld_17_pick_two_obj_and_place",
+     "prompt": "You are playing a text-based household game. Your task is stated in task.md.\n\nInteract with the game through the command line:\n\n    python3 act.py <action>     take one action, for example: python3 act.py go to fridge 1\n    python3 act.py --look       repeat the current observation without using a turn\n    python3 act.py --commands   list the actions the game will accept right now\n\nOnly actions the game accepts do anything; anything else wastes a turn and it tells you so.\nYou have a limited number of turns, shown after every action. The episode is finished when the\nstatus line says the task is won, and that is the only thing that counts as success.",
+     "verifier": "python3 act.py --status",
+     "workspace": "benchmarks/alfworld/workspaces/alfworld_17_pick_two_obj_and_place",
+     "split": "alfworld"
+    }
+   ]
+  }
+ ]
+}

@@ -37,15 +37,19 @@ with `No such file or directory`. Ship the two scripts once, then launch from wh
 
 ```bash
 scp infra/upnquick/serve.sh infra/upnquick/stop.sh upnquick:~/tmp/agent-vllm/
-ssh upnquick 'cd ~/tmp/agent-vllm && setsid nohup env GPUS=0 PORT=8011 \
-    RUNDIR=$HOME/tmp/agent-vllm ./serve.sh </dev/null >serve.out 2>&1 &'
+ssh upnquick 'cd ~/tmp/agent-vllm && WAIT=0 GPUS=0 PORT=8011 \
+    RUNDIR=$HOME/tmp/agent-vllm ./serve.sh'
 ./infra/upnquick/tunnel.sh                       # 127.0.0.1:8020 -> upnquick:8011
 ```
 
-`setsid nohup ... &` matters: `serve.sh` polls for readiness for up to fifteen minutes, so running
-it in the foreground holds the SSH session open for the whole model load. Weights take a few
-minutes off NFS on a cold cache; poll readiness through the tunnel with
-`curl -s http://127.0.0.1:8020/v1/models`.
+`WAIT=0` matters: without it `serve.sh` polls for readiness for up to fifteen minutes and the SSH
+command sits there for the whole model load (the symptom is an `ssh` that prints `launched pid ...`
+and then returns nothing for ten-odd minutes). `WAIT=0` returns as soon as the server process is
+spawned. Weights take a few minutes off NFS on a cold cache, so poll readiness through the tunnel
+instead of over SSH, with `curl -s http://127.0.0.1:8020/v1/models`.
+
+Pick a free GPU before launching: `nvidia-smi --query-gpu=index,memory.used --format=csv` on the
+node: these cards are shared, and `GPUS=0` above claims exactly one of them.
 
 **Always export `HF_HUB_OFFLINE=1`**: without it the processor load
 blocks on a Hugging Face Hub network call and the run can sit for tens of minutes producing nothing
@@ -77,9 +81,78 @@ API_KEY=EMPTY HF_HUB_OFFLINE=1 uv run python scripts/prompt_search.py \
     --split hard2 --context-window 8000 --max-tool-output-tokens 1200
 ```
 
+`scripts/harness_ab.py` scores the harness itself rather than the prompt. It runs the same cases
+through four arms — `kernel` (the full agent), `kernel-bare` (the same loop and tools with memory,
+experience and skills removed), `mini` (a reimplementation of the mini-swe-agent protocol: no tool
+API, one bash command per turn parsed out of a fenced block, linear history, no compaction) and
+`oneshot` (a single completion, with the image inlined for a visual task — the floor a harness has
+to beat to justify itself).
+
+```bash
+API_KEY=EMPTY HF_HUB_OFFLINE=1 uv run python scripts/harness_ab.py \
+    --split heldout,hard,hard2,probe --repeats 2 --temperature 0 \
+    --endpoints http://127.0.0.1:8020/v1
+```
+
+It reports pass rate, mean steps, peak prompt tokens and terminal-status counts per arm, plus a
+per-case matrix — the per-case rows are the useful part, since the arms differ on specific
+capabilities rather than uniformly.
+
 Pin `--temperature 0` for any A/B: the served default is nonzero, and one sample per cell cannot
 tell a prompt effect from a dice roll. `--context-window` must stay comfortably above
 `--max-tool-output-tokens`, or a single large observation overflows the window on its own.
+
+`--max-output-tokens` matters more than it looks on a reasoning model. At the config default of
+4096 this model spends the whole budget thinking about a hard problem and returns an *empty*
+message with no tool calls, which the loop reads as "task complete": the episode ends at two steps
+having written nothing. Those are reported as `empty_completion` rather than `completed`, and the
+cure is a budget the model can actually finish a thought in (12288 works for contest problems).
+
+### Benchmarks beyond the bundled curriculum
+
+The bundled coding curriculum is saturated for a capable model — all three agent arms score in the
+90s and the differences come down to two or three probe cases. Three adapters build harder, less
+code-shaped benchmarks as ordinary workspaces plus a curriculum file, so `harness_ab.py` consumes
+them unchanged. Each keeps its answer key *outside* the workspace the agent can read.
+
+```bash
+# contest programming: one uniform stdin/stdout contract, graded on hidden tests
+uv run python benchmarks/livecodebench/build.py --difficulty hard --limit 12
+API_KEY=EMPTY HF_HUB_OFFLINE=1 uv run python scripts/harness_ab.py \
+    --curriculum benchmarks/livecodebench/curriculum_hard.json --split lcb \
+    --max-output-tokens 12288 --max-steps 15
+
+# visual search: small targets in large photographs, where cropping and looking again pays
+uv run python benchmarks/vstar/build.py --limit 48
+API_KEY=EMPTY HF_HUB_OFFLINE=1 uv run python scripts/harness_ab.py \
+    --curriculum benchmarks/vstar/curriculum.json --split vstar \
+    --arms oneshot,mini,kernel-bare,kernel
+
+# household text games whose six task types recur, so procedures can be reused
+alfworld-download                                  # ~2.2GB, into $ALFWORLD_DATA
+uv run python benchmarks/alfworld/build.py --limit 18 \
+    --data ~/.cache/alfworld --interpreter ~/.venvs/alfworld/bin/python
+```
+
+ALFWorld needs its own interpreter: it pulls in textworld and spacy, which have no business in the
+agent's environment. Its games are stateful while the agent's shell is not, so each workspace holds
+an `act.py` client over a workspace-local daemon that keeps one game open across commands.
+
+### Measuring self-improvement
+
+By default every episode starts blank, which makes memory, experience and skills untestable —
+they exist to pay off *across* tasks. `--persistent-state DIR` carries each arm's subsystem state
+across the whole split, runs the episodes one at a time in curriculum order, and prints a learning
+curve comparing each arm's first half to its second.
+
+```bash
+API_KEY=EMPTY HF_HUB_OFFLINE=1 uv run python scripts/harness_ab.py \
+    --curriculum benchmarks/alfworld/curriculum.json --split alfworld \
+    --arms kernel --persistent-state runs/alfworld_state
+```
+
+Use a benchmark whose tasks genuinely repeat, and compare against the same arm run without the
+flag: a rising second half only means something next to a flat one.
 
 ## Implementing it yourself
 

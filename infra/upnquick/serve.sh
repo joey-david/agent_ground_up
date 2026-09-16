@@ -41,6 +41,13 @@ CUDA_VISIBLE_DEVICES="$GPUS" HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}" \
 
 echo "launched pid $! on GPU(s) ${GPUS}, log: $RUNDIR/server.log"
 
+# WAIT=0 returns as soon as the server is spawned. Launching over SSH should use it: the
+# readiness poll below otherwise holds the SSH session open for the whole model load, and
+# readiness is better checked through the tunnel anyway.
+if [ "${WAIT:-1}" = "0" ]; then
+  exit 0
+fi
+
 # Loading ~52 GB of weights off NFS takes several minutes on a cold cache.
 for _ in $(seq 1 90); do
   if curl -fsS "http://127.0.0.1:${PORT}/v1/models" >/dev/null 2>&1; then
