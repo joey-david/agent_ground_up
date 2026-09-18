@@ -85,7 +85,7 @@ class LocalCodingRunner:
         run_py = candidate / "scripts" / "run.py"
         config = candidate / "configs" / "lamgate.yaml"
         if not run_py.exists() or not config.exists():
-            return CaseResult(case.id, 0.0, False, "candidate missing scripts/run.py or configs/lamgate.yaml")
+            return CaseResult(case.id, 0.0, False, "candidate missing scripts/run.py or configs/local.yaml")
 
         with tempfile.TemporaryDirectory(prefix=f"eval-{case.id}-") as temp:
             workdir = Path(temp) / "workspace"
