@@ -212,9 +212,6 @@ Current train score: {parent_report.mean_score:.3f}
 Training-case evidence:
 {failures}
 
-Persistent discoveries:
-{memory_context}
-
 Modify the implementation in this workspace to improve generalization on unseen sibling tasks.
 You may change the agent loop, tools, generated skills, memory, evaluator-facing behavior, task
 selection, and the self-improvement code itself. Do not hard-code benchmark answers. Prefer the
