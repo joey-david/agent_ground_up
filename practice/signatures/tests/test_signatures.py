@@ -16,7 +16,6 @@ MODULES = [
     "evaluate.py",
     "archive.py",
     "improve.py",
-    "loss.py",
 ]
 REQUIRED = "<required>"
 
