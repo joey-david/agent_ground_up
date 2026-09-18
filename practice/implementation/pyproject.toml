@@ -6,6 +6,7 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = []
+local = []
 train = []
 
 [tool.pytest.ini_options]
