@@ -1,103 +1,38 @@
-from types import SimpleNamespace
+import json
 
-from agent_ground_up.runtime import ContinuousResponsesRuntime
-
-
-class Item:
-    def __init__(self, **data):
-        self.data = data
-
-    def model_dump(self, **kwargs):
-        return dict(self.data)
+from agent_ground_up.runtime import parse_assistant
+from agent_ground_up.tools import TOOL_SCHEMAS
 
 
-class Responses:
-    def __init__(self):
-        self.calls = []
-        self.outputs = [
-            [
-                Item(type="reasoning", id="r1", encrypted_content="opaque", status="completed"),
-                Item(
-                    type="function_call",
-                    id="fc1",
-                    call_id="call-1",
-                    name="bash",
-                    arguments='{"command":"pwd"}',
-                    status="completed",
-                    phase="analysis",
-                ),
-            ],
-            [
-                Item(type="compaction", id="cmp1", encrypted_content="compact", created_by="server"),
-                Item(
-                    type="message",
-                    id="m1",
-                    role="assistant",
-                    content=[{"type": "output_text", "text": "done"}],
-                    status="completed",
-                ),
-            ],
-        ]
+def test_qwen_native_tool_call_is_parsed_without_a_server() -> None:
+    text = """<think>
+I should inspect the repository.
+</think>
+<tool_call>
+<function=bash>
+<parameter=command>
+pytest -q
+</parameter>
+<parameter=timeout_s>
+30
+</parameter>
+</function>
+</tool_call>"""
 
-    def create(self, **kwargs):
-        self.calls.append(kwargs)
-        output = self.outputs.pop(0)
-        return SimpleNamespace(
-            output=output,
-            usage=SimpleNamespace(input_tokens=321, output_tokens=45),
-        )
+    message = parse_assistant(text, TOOL_SCHEMAS)
 
-
-class Client:
-    def __init__(self):
-        self.responses = Responses()
-
-
-def tool_schema():
-    return {
-        "type": "function",
-        "function": {
-            "name": "bash",
-            "description": "run shell",
-            "parameters": {
-                "type": "object",
-                "properties": {"command": {"type": "string"}},
-                "required": ["command"],
-                "additionalProperties": False,
-            },
-        },
+    assert "inspect the repository" in message["reasoning_content"]
+    assert message["content"] is None
+    call = message["tool_calls"][0]
+    assert call["function"]["name"] == "bash"
+    assert json.loads(call["function"]["arguments"]) == {
+        "command": "pytest -q",
+        "timeout_s": 30,
     }
 
 
-def test_continuous_runtime_replays_native_state_and_provider_compaction() -> None:
-    client = Client()
-    runtime = ContinuousResponsesRuntime(client, "gpt-6-astra", compact_threshold=175_000)
-    runtime.reset("fix it")
-
-    first = runtime.complete(instructions="agent", tools=[tool_schema()], max_output_tokens=1000)
-    request = client.responses.calls[0]
-    assert request["store"] is False
-    assert request["include"] == ["reasoning.encrypted_content"]
-    assert request["reasoning"]["context"] == "auto"
-    assert request["context_management"] == [
-        {"type": "compaction", "compact_threshold": 175_000}
-    ]
-    assert request["tools"][0]["name"] == "bash"
-    assert "function" not in request["tools"][0]
-    assert first.message["tool_calls"][0]["id"] == "call-1"
-    assert first.input_tokens == 321
-    assert runtime.history[1]["type"] == "reasoning"
-    assert "status" not in runtime.history[1]
-    assert runtime.history[2]["phase"] == "analysis"
-
-    runtime.submit_tool_output(call_id="call-1", name="bash", content="/tmp\n[exit code: 0]")
-    second = runtime.complete(instructions="agent", tools=[tool_schema()], max_output_tokens=1000)
-    replay = client.responses.calls[1]["input"]
-    assert any(item.get("type") == "reasoning" for item in replay)
-    assert any(item.get("type") == "function_call" for item in replay)
-    assert replay[-1]["type"] == "function_call_output"
-    assert replay[-1]["call_id"] == "call-1"
-    assert second.message["content"] == "done"
-    assert second.compactions == 1
-    assert runtime.history[0]["type"] == "compaction"
-    assert "created_by" not in runtime.history[0]
+def test_plain_answer_stays_plain() -> None:
+    message = parse_assistant("<think>work</think>finished", TOOL_SCHEMAS)
+    assert message["content"] == "finished"
+    assert message["reasoning_content"] == "work"
+    assert "tool_calls" not in message
