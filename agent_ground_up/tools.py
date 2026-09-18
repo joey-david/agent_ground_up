@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import io
 import mimetypes
 import os
 import signal
@@ -13,10 +14,33 @@ from typing import Any
 from PIL import Image
 
 
+def arg(kind: str, description: str = "", **extra: Any) -> dict[str, Any]:
+    schema: dict[str, Any] = {"type": kind}
+    if description:
+        schema["description"] = description
+    schema.update(extra)
+    return schema
+
+
+def tool(name: str, description: str, **properties: dict[str, Any]) -> dict[str, Any]:
+    required = [name for name, schema in properties.items() if "default" not in schema]
+    return {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": description,
+            "parameters": {
+                "type": "object",
+                "properties": properties,
+                "required": required,
+                "additionalProperties": False,
+            },
+        },
+    }
+
+
 @dataclass(slots=True)
 class ToolResult:
-    """Captured result of one bash process."""
-
     output: str
     returncode: int
     timed_out: bool = False
@@ -31,8 +55,6 @@ class ToolResult:
 
 @dataclass(slots=True)
 class ImageResult:
-    """Validated image metadata and model-ready bytes."""
-
     path: str
     mime_type: str
     width: int
@@ -41,89 +63,56 @@ class ImageResult:
     data_url: str
 
     def content(self) -> list[dict[str, Any]]:
-        description = f"Image: {self.path} ({self.width}x{self.height}, {self.mime_type})"
         return [
-            {"type": "text", "text": description},
+            {
+                "type": "text",
+                "text": f"Image: {self.path} ({self.width}x{self.height}, {self.mime_type})",
+            },
             {"type": "image_url", "image_url": {"url": self.data_url}},
         ]
 
 
 TOOL_SCHEMAS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "bash",
-            "description": "Run a bash command in the workspace and return combined output plus its exit code.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "command": {"type": "string", "description": "The command to run."},
-                    "timeout_s": {
-                        "type": "integer",
-                        "description": "Maximum runtime in seconds.",
-                        "default": 120,
-                    },
-                },
-                "required": ["command"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "view_image",
-            "description": "Open an image file from the workspace and show it to the multimodal model.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "Path relative to the workspace."},
-                },
-                "required": ["path"],
-                "additionalProperties": False,
-            },
-        },
-    },
+    tool(
+        "bash",
+        "Run a bash command in the workspace and return combined output plus its exit code.",
+        command=arg("string", "The command to run."),
+        timeout_s=arg("integer", "Maximum runtime in seconds.", default=120),
+    ),
+    tool(
+        "view_image",
+        "Open an image file from the workspace and show it to the model.",
+        path=arg("string", "Path relative to the workspace."),
+    ),
 ]
 
 
 class Toolbox:
-    """The two operations available to the coding agent."""
-
     def __init__(
         self,
         workdir: str | Path,
         *,
         max_output_tokens: int = 8192,
+        patch_size: int = 16,
         token_counter: Callable[[str], int] | None = None,
     ) -> None:
         self.workdir = Path(workdir).expanduser().resolve()
         self.max_output_tokens = max_output_tokens
+        self.patch_size = patch_size
         self.token_counter = token_counter or (lambda text: len(text.encode("utf-8")))
 
     def bash(self, command: str, timeout_s: int = 120) -> ToolResult:
-        """Run a command in the workspace.
-
-        Args:
-            command: Bash source to execute.
-            timeout_s: Maximum runtime in seconds.
-
-        Returns:
-            Combined stdout/stderr, exit code, and timeout metadata.
-        """
         process = subprocess.Popen(
-            command,  # you want to run something, right?
-            shell=True,  # but this is python, it can't run anything by itself,
-            # it needs to go through a shell
-            executable="/bin/bash",  # what program do you want to run in your shell
-            cwd=self.workdir,  # and where?
-            text=True,  # stdout is bytes by default, we want text instead
-            encoding="utf-8",  # how do you want your text, then?
-            errors="replace",  # what if you can't decode the text? don't crash replace with <?>.
-            stdout=subprocess.PIPE,  # capture stdout instead of default projecting it to screen
-            stderr=subprocess.STDOUT,  # merge stderr into stdout, that way we get both
-            start_new_session=True,  # create a dedicated process group \
-            # that way timeout/kills don't leave orphans.
+            command,
+            shell=True,
+            executable="/bin/bash",
+            cwd=self.workdir,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
         )
         timed_out = False
         try:
@@ -137,18 +126,9 @@ class Toolbox:
         return ToolResult(output, process.returncode if not timed_out else -1, timed_out, omitted)
 
     def view_image(self, path: str) -> ImageResult:
-        """Read an image from the workspace.
-
-        Args:
-            path: Image path relative to the workspace.
-
-        Returns:
-            Image metadata and a data URL for the model request.
-        """
         image_path = (self.workdir / path).resolve(strict=True)
         if not image_path.is_relative_to(self.workdir):
             raise ValueError("Image must be inside the workspace")
-        size = image_path.stat().st_size
         with Image.open(image_path) as image:
             image.verify()
             width, height = image.size
@@ -157,40 +137,60 @@ class Toolbox:
                 or mimetypes.guess_type(image_path.name)[0]
                 or "image/png"
             )
-        encoded = base64.b64encode(image_path.read_bytes()).decode("ascii")
+
+        if self._patch_count(width, height) <= self.max_output_tokens:
+            data = image_path.read_bytes()
+        else:
+            data, width, height, mime = self._shrink(image_path, width, height)
+
+        encoded = base64.b64encode(data).decode("ascii")
         return ImageResult(
             str(image_path.relative_to(self.workdir)),
             mime,
             width,
             height,
-            size,
+            len(data),
             f"data:{mime};base64,{encoded}",
         )
 
+    def _patch_count(self, width: int, height: int) -> int:
+        patch = self.patch_size
+        return -(-width // patch) * -(-height // patch)
+
+    def _shrink(self, image_path: Path, width: int, height: int) -> tuple[bytes, int, int, str]:
+        patch = self.patch_size
+        scale = ((self.max_output_tokens * patch * patch) / (width * height)) ** 0.5
+        width = max(1, int(width * min(scale, 1.0)))
+        height = max(1, int(height * min(scale, 1.0)))
+        while self._patch_count(width, height) > self.max_output_tokens:
+            if width >= height:
+                width = max(1, width - patch)
+            else:
+                height = max(1, height - patch)
+
+        with Image.open(image_path) as original:
+            image = original.convert("RGB").resize((width, height), Image.Resampling.LANCZOS)
+        buffer = io.BytesIO()
+        image.save(buffer, format="JPEG", quality=85)
+        return buffer.getvalue(), width, height, "image/jpeg"
+
     def _truncate(self, text: str) -> tuple[str, int]:
-        """Fit output to a token budget while preserving its head and tail."""
         count = self.token_counter(text)
         if count <= self.max_output_tokens:
             return text, 0
-
-        target = self.max_output_tokens // 2
-        lo, hi = 0, len(text)
-        while lo < hi:
-            mid = (lo + hi + 1) // 2
-            if self.token_counter(text[:mid]) <= target:
-                lo = mid
-            else:
-                hi = mid - 1
-        head = text[:lo]
-
-        lo, hi = 0, len(text)
-        while lo < hi:
-            mid = (lo + hi + 1) // 2
-            if self.token_counter(text[len(text) - mid :]) <= target:
-                lo = mid
-            else:
-                hi = mid - 1
-        tail = text[len(text) - lo :]
+        budget = self.max_output_tokens // 2
+        head = self._longest_fit(text, budget)
+        tail = self._longest_fit(text, budget, tail=True)
         omitted = max(0, count - self.token_counter(head) - self.token_counter(tail))
-        marker = f"\n... [{omitted} tokens omitted] ...\n"
-        return head + marker + tail, omitted
+        return f"{head}\n... [{omitted} tokens omitted] ...\n{tail}", omitted
+
+    def _longest_fit(self, text: str, budget: int, *, tail: bool = False) -> str:
+        take = (lambda n: text[len(text) - n :]) if tail else (lambda n: text[:n])
+        low, high = 0, len(text)
+        while low < high:
+            middle = (low + high + 1) // 2
+            if self.token_counter(take(middle)) <= budget:
+                low = middle
+            else:
+                high = middle - 1
+        return take(low)
