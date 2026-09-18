@@ -22,12 +22,12 @@ def arg(kind: str, description: str = "", **extra: Any) -> dict[str, Any]:
     return schema
 
 
-def tool(name: str, description: str, **properties: dict[str, Any]) -> dict[str, Any]:
+def tool(tool_name: str, description: str, **properties: dict[str, Any]) -> dict[str, Any]:
     required = [name for name, schema in properties.items() if "default" not in schema]
     return {
         "type": "function",
         "function": {
-            "name": name,
+            "name": tool_name,
             "description": description,
             "parameters": {
                 "type": "object",
