@@ -1,33 +1,23 @@
 # Reconstruction practice
 
-This replaces the old `attempt_1/` / `attempt_2/` pattern with two deterministic drills.
+Two deterministic drills cover the agent kernel without reproducing model-serving infrastructure.
 
-## 1. `implementation/` — LeetCode-style implementation recall
+## 1. `implementation/`
 
-The files already contain the imports, dataclasses, function/method signatures, argument types, return types, and `NotImplementedError` bodies. Fill only the bodies (plus the marked config/TOML values). Tests are the answer key.
-
-Run from the repository root:
+Imports, dataclasses, function signatures, and types are supplied; fill the bodies and the marked local config/TOML values.
 
 ```bash
 uv run pytest -q practice/implementation/tests
 ```
 
-Recommended order: tools → memory → skills → agent → tasks/evaluate → archive/improve → loss → config.
+Recommended order: tools → memory → skills → agent → tasks/evaluate → archive/improve → local config.
 
-## 2. `signatures/` — interface recall
+## 2. `signatures/`
 
-The target Python/config/TOML files are empty. Add **only** class/function signatures and type annotations; bodies may be `...`. The tests compare the AST-level API against the implementation drill, so they check parameter names/kinds/default presence, annotations, and return types without executing your code. For YAML/TOML, the equivalent recall task is the schema: section/key structure, not production values.
+Reconstruct only interfaces and annotations. The tests compare AST-level APIs against the implementation drill. YAML/TOML exercises cover the local Bonsai/MLX schema, not HTTP endpoints.
 
 ```bash
 uv run pytest -q practice/signatures/tests
 ```
 
-## Reset
-
-Both workspaces are committed starter states, so resetting is trivial:
-
-```bash
-git restore practice/implementation practice/signatures
-```
-
-Do not use the reference `agent_ground_up/` while timing a recall attempt. Record time-to-green and source peeks in your own notes/cards.
+Reset either workspace with `git restore practice/implementation practice/signatures`.

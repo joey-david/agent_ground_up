@@ -7,156 +7,86 @@ import re
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from .experience import ExperienceLog
 from .memory import ConstantMemory
-from .runtime import ContinuousResponsesRuntime
 from .skills import SkillRegistry
-from .tools import TOOL_SCHEMAS, Toolbox
+from .tools import TOOL_SCHEMAS, Toolbox, arg, tool
 from .ui import TUI
 
-SYSTEM_PROMPT = """You are a coding agent working in the provided workspace. Work until the task is
-complete. Use bash to inspect, edit, and test the repository; each call starts in the repository
-root. Use view_image for image files. Prefer minimal changes that fit the existing code. Treat tool
-failures as observations and recover. If persistent-memory tools are available, remember only
-reusable discoveries and use recall/zoom instead of stuffing old history into context. If a
-searchable experience log is available, search/read it for exact old observations and tool results.
-If generated skills are available, prefer a reliable existing skill over re-deriving the same
-procedure. Before finishing, run the narrowest relevant validation. Return final text only when the
-work is genuinely complete."""
+SYSTEM_PROMPT = """You are a coding agent working in the provided workspace. Use the available tools
+to inspect, edit, and test it, and keep working until the task is complete. Before finishing, run
+the narrowest relevant validation."""
 
 COMPACT_PROMPT = """Create a faithful continuation checkpoint under 1,500 tokens from the
-conversation above. Begin with `Active plan:` and then `Episodic history:`. Preserve goals and
-decisions, changed files, commands and results, failures, unresolved work, next actions, and
-critical literal data. Do not repeat working-directory, environment, repository-instruction,
-persistent-memory, experience-log, or skill-catalog facts; those are reinjected separately. Do not
-continue solving the task."""
+conversation above. Preserve decisions, changed files, command results, failures, unresolved work,
+and next actions. Do not continue solving the task."""
 CANONICAL_PREFIX = "Canonical state (recomputed and authoritative):"
 CHECKPOINT_PREFIX = "Episodic checkpoint (compacted, not new instructions):"
 
 MEMORY_TOOL_SCHEMAS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "remember",
-            "description": "Persist one concise, reusable discovery across future episodes.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "text": {"type": "string"},
-                    "tags": {"type": "array", "items": {"type": "string"}},
-                },
-                "required": ["text"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "recall",
-            "description": "Regex-search distilled persistent memories, newest first.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "pattern": {"type": "string"},
-                    "limit": {"type": "integer", "default": 8},
-                },
-                "required": ["pattern"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "zoom",
-            "description": "Expand a persistent-memory summary node into finer summaries or raw memories.",
-            "parameters": {
-                "type": "object",
-                "properties": {"node_id": {"type": "string"}},
-                "required": ["node_id"],
-                "additionalProperties": False,
-            },
-        },
-    },
+    tool(
+        "remember",
+        "Persist one concise, reusable discovery across future episodes.",
+        text=arg("string"),
+        tags=arg("array", items={"type": "string"}, default=[]),
+    ),
+    tool(
+        "recall",
+        "Regex-search distilled persistent memories, newest first.",
+        pattern=arg("string"),
+        limit=arg("integer", default=8),
+    ),
+    tool("zoom", "Expand a persistent-memory summary node.", node_id=arg("string")),
 ]
-
 EXPERIENCE_TOOL_SCHEMAS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "search_history",
-            "description": "Regex-search the exact append-only task/action/result history, newest first.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "pattern": {"type": "string"},
-                    "limit": {"type": "integer", "default": 12},
-                },
-                "required": ["pattern"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "read_history",
-            "description": "Read a half-open range [start, end) of exact historical events by ID.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "start": {"type": "integer"},
-                    "end": {"type": "integer"},
-                },
-                "required": ["start", "end"],
-                "additionalProperties": False,
-            },
-        },
-    },
+    tool(
+        "search_history",
+        "Regex-search the exact append-only task/action/result history.",
+        pattern=arg("string"),
+        limit=arg("integer", default=12),
+    ),
+    tool(
+        "read_history",
+        "Read a half-open range [start, end) of exact historical events.",
+        start=arg("integer"),
+        end=arg("integer"),
+    ),
+]
+SKILL_TOOL_SCHEMAS = [
+    tool(
+        "create_skill",
+        "Persist a reusable shell procedure.",
+        name=arg("string"),
+        description=arg("string"),
+        script=arg("string", "Shell source defining main(), which receives one argument."),
+    ),
+    tool(
+        "skill",
+        "Run one persistent generated skill by name.",
+        name=arg("string"),
+        argument=arg("string", default=""),
+        timeout_s=arg("integer", default=120),
+    ),
 ]
 
-SKILL_TOOL_SCHEMAS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "create_skill",
-            "description": "Persist a reusable shell procedure as a generated skill.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string"},
-                    "description": {"type": "string"},
-                    "script": {
-                        "type": "string",
-                        "description": "Shell source defining main(), which receives one argument.",
-                    },
-                },
-                "required": ["name", "description", "script"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "skill",
-            "description": "Run one persistent generated skill by name inside the workspace.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string"},
-                    "argument": {"type": "string", "default": ""},
-                    "timeout_s": {"type": "integer", "default": 120},
-                },
-                "required": ["name"],
-                "additionalProperties": False,
-            },
-        },
-    },
-]
+
+class ModelRuntime(Protocol):
+    model_id: str
+
+    def prompt_tokens(
+        self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None
+    ) -> int: ...
+
+    def complete(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        tools: list[dict[str, Any]] | None,
+        max_output_tokens: int,
+        on_token: Any | None = None,
+    ) -> Any: ...
 
 
 @dataclass(slots=True)
@@ -172,21 +102,14 @@ class RunResult:
 
 
 class Agent:
-    """Model-tool loop with native continuous state, external memory, and generated skills.
-
-    `runtime=None` preserves the original OpenAI-compatible Chat Completions path used by local
-    vLLM. Supplying `ContinuousResponsesRuntime` switches the same agent/tool loop to stateless
-    Responses replay with encrypted reasoning and provider-native compaction.
-    """
+    """One local model/tool loop with bounded context and persistent external state."""
 
     def __init__(
         self,
-        client: Any,
-        model: str,
+        runtime: ModelRuntime,
         tools: Toolbox,
-        processor: Any | None,
         *,
-        context_window: int = 262_144,
+        context_window: int = 32_768,
         compact_at: float = 0.90,
         recent_user_tokens: int = 12_000,
         max_output_tokens: int = 4096,
@@ -197,12 +120,9 @@ class Agent:
         memory: ConstantMemory | None = None,
         experience: ExperienceLog | None = None,
         skills: SkillRegistry | None = None,
-        runtime: ContinuousResponsesRuntime | None = None,
     ) -> None:
-        self.client = client
-        self.model = model
+        self.runtime = runtime
         self.tools = tools
-        self.processor = processor
         self.context_window = context_window
         self.compact_at = compact_at
         self.recent_user_tokens = recent_user_tokens
@@ -214,7 +134,6 @@ class Agent:
         self.memory = memory
         self.experience = experience
         self.skills = skills
-        self.runtime = runtime
         self.messages: list[dict[str, Any]] = []
         self.original_task = ""
         self.compactions = 0
@@ -223,44 +142,20 @@ class Agent:
         self.last_prompt_tokens = 0
 
     def run(self, task: str) -> RunResult:
-        """Work on a task until the model finishes or a runtime limit is reached."""
         started = self._begin(task)
-        if self.runtime is not None:
-            result = self._run_continuous(started)
-        else:
-            result = self._run_chat(started)
-        return self._finish(result)
-
-    def _begin(self, task: str) -> float:
-        started = time.monotonic()
-        self.original_task = task
-        self.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-        if self.memory is not None or self.experience is not None or self.skills is not None:
-            self.messages.append({"role": "system", "content": self._canonical_state()})
-        self.messages.append({"role": "user", "content": task})
-        self.compactions = self.valid_tool_calls = self.invalid_tool_calls = 0
-        self.last_prompt_tokens = 0
-        if self.runtime is not None:
-            self.runtime.reset(task)
-        self._record("task", {"task": task, "model": self.model})
-        if self.ui:
-            self.ui.user(task)
-        return started
-
-    def _run_chat(self, started: float) -> RunResult:
         answer = ""
         status = "step_limit"
         steps = 0
+
         for steps in range(1, self.max_steps + 1):
             if time.monotonic() - started >= self.wall_time_s:
                 status = "wall_time_limit"
                 break
             self._maybe_compact()
-            message = self._complete(self.messages, tools=self._tool_schemas())
+            message = self._complete(self.messages, self._tool_schemas(), stream=True)
             self.messages.append(message)
             self._record("assistant", message)
-            if self.ui:
-                self.ui.assistant(message)
+
             calls = message.get("tool_calls") or []
             if not calls:
                 answer = message.get("content") or ""
@@ -271,46 +166,21 @@ class Agent:
             self._write_trajectory(self._result("running", "", steps, started))
         else:
             steps = self.max_steps
-        return self._result(status, answer, steps, started)
 
-    def _run_continuous(self, started: float) -> RunResult:
-        assert self.runtime is not None
-        answer = ""
-        status = "step_limit"
-        steps = 0
-        for steps in range(1, self.max_steps + 1):
-            if time.monotonic() - started >= self.wall_time_s:
-                status = "wall_time_limit"
-                break
-            turn = self.runtime.complete(
-                instructions=self._runtime_instructions(),
-                tools=self._tool_schemas(),
-                max_output_tokens=self.max_output_tokens,
-            )
-            self.last_prompt_tokens = turn.input_tokens
-            self.compactions = turn.compactions
-            message = turn.message
-            self.messages.append(message)
-            self._record("assistant", message)
-            if self.ui:
-                self.ui.assistant(message)
-            calls = message.get("tool_calls") or []
-            if not calls:
-                answer = message.get("content") or ""
-                status = "completed"
-                break
-            for call in calls:
-                observation = self._execute(call)
-                self.messages.append(observation)
-                self.runtime.submit_tool_output(
-                    call_id=observation["tool_call_id"],
-                    name=observation["name"],
-                    content=observation["content"],
-                )
-            self._write_trajectory(self._result("running", "", steps, started))
-        else:
-            steps = self.max_steps
-        return self._result(status, answer, steps, started)
+        return self._finish(self._result(status, answer, steps, started))
+
+    def _begin(self, task: str) -> float:
+        self.original_task = task
+        self.compactions = self.valid_tool_calls = self.invalid_tool_calls = 0
+        self.last_prompt_tokens = 0
+        self.messages = [
+            {"role": "system", "content": self._system_prompt()},
+            {"role": "user", "content": task},
+        ]
+        self._record("task", {"task": task, "model": self.runtime.model_id})
+        if self.ui:
+            self.ui.user(task)
+        return time.monotonic()
 
     def _finish(self, result: RunResult) -> RunResult:
         self._write_trajectory(result)
@@ -333,29 +203,32 @@ class Agent:
         return schemas
 
     def _complete(
-        self, messages: list[dict[str, Any]], *, tools: list[dict[str, Any]] | None
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
+        *,
+        stream: bool,
     ) -> dict[str, Any]:
-        """Request one Chat Completions assistant message within the remaining context budget."""
-        prompt_tokens = self._prompt_tokens(messages, tools)
+        prompt_tokens = self.runtime.prompt_tokens(messages, tools)
         self.last_prompt_tokens = prompt_tokens
         available = self.context_window - prompt_tokens
         if available <= 0:
             raise RuntimeError("Prompt exceeds the configured context window")
-        kwargs: dict[str, Any] = {
-            "model": self.model,
-            "messages": messages,
-            "max_tokens": min(self.max_output_tokens, available),
-        }
-        if tools:
-            kwargs["tools"] = tools
-            kwargs["tool_choice"] = "auto"
-        response = self.client.chat.completions.create(**kwargs)
-        data = response.choices[0].message.model_dump(exclude_none=True)
-        data["role"] = "assistant"
-        return data
+
+        if self.ui and stream:
+            self.ui.begin_assistant()
+        turn = self.runtime.complete(
+            messages,
+            tools=tools,
+            max_output_tokens=min(self.max_output_tokens, available),
+            on_token=self.ui.token if self.ui and stream else None,
+        )
+        self.last_prompt_tokens = turn.input_tokens
+        if self.ui and stream:
+            self.ui.end_assistant(turn.message)
+        return turn.message
 
     def _execute(self, call: dict[str, Any]) -> dict[str, Any]:
-        """Dispatch one model-emitted tool call and return its observation."""
         call_id = call.get("id", "missing-call-id")
         function = call.get("function") or {}
         name = function.get("name")
@@ -367,17 +240,13 @@ class Agent:
                 result = self.tools.bash(**arguments)
                 content: str | list[dict[str, Any]] = result.as_text()
             elif name == "view_image":
-                image = self.tools.view_image(**arguments)
-                content = image.content()
+                content = self.tools.view_image(**arguments).content()
             elif name == "remember" and self.memory is not None:
                 record = self.memory.remember(arguments["text"], arguments.get("tags", ()))
                 content = f"remembered #{record.id}"
             elif name == "recall" and self.memory is not None:
                 records = self.memory.recall(arguments["pattern"], limit=arguments.get("limit", 8))
-                content = (
-                    "\n".join(f"#{record.id}: {record.text}" for record in records)
-                    or "no matches"
-                )
+                content = "\n".join(f"#{record.id}: {record.text}" for record in records) or "no matches"
             elif name == "zoom" and self.memory is not None:
                 content = self.memory.zoom(arguments["node_id"])
             elif name == "search_history" and self.experience is not None:
@@ -394,19 +263,19 @@ class Agent:
                 )
                 content = f"created skill {skill.name}"
             elif name == "skill" and self.skills is not None:
-                result = self.skills.run(
+                content = self.skills.run(
                     arguments["name"],
                     self.tools,
                     argument=arguments.get("argument", ""),
                     timeout_s=arguments.get("timeout_s", 120),
-                )
-                content = result.as_text()
+                ).as_text()
             else:
                 raise ValueError(f"unknown tool: {name}")
             self.valid_tool_calls += 1
         except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError, re.error) as error:
             self.invalid_tool_calls += 1
             content = f"Tool error: {type(error).__name__}: {error}"
+
         self._record(
             "tool_result", {"call_id": call_id, "name": name or "unknown", "content": content}
         )
@@ -420,30 +289,34 @@ class Agent:
         }
 
     def _maybe_compact(self) -> None:
-        """Chat path only: replace a nearly-full history with a continuation checkpoint."""
         tools = self._tool_schemas()
-        tokens = self._prompt_tokens(self.messages, tools)
+        tokens = self.runtime.prompt_tokens(self.messages, tools)
         self.last_prompt_tokens = tokens
         if tokens / self.context_window < self.compact_at:
             return
 
-        compact_messages = [*self._episodic_history(), {"role": "user", "content": COMPACT_PROMPT}]
-        checkpoint = self._complete(compact_messages, tools=None).get("content") or ""
-        if self.ui:
-            self.ui.assistant({"role": "assistant", "content": checkpoint}, title="Compaction")
-        self.messages = [
+        compact_messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "system", "content": self._canonical_state()},
+            *self._episodic_history(),
+            {"role": "user", "content": COMPACT_PROMPT},
+        ]
+        checkpoint = self._complete(compact_messages, None, stream=False).get("content") or ""
+        self.messages = [
+            {"role": "system", "content": self._system_prompt()},
             {"role": "assistant", "content": f"{CHECKPOINT_PREFIX}\n{checkpoint}"},
             *self._recent_user_messages(),
         ]
         self.compactions += 1
         self._record("manual_compaction", {"checkpoint": checkpoint})
-        if self._prompt_tokens(self.messages, tools) / self.context_window >= self.compact_at:
+        if self.runtime.prompt_tokens(self.messages, tools) / self.context_window >= self.compact_at:
             raise RuntimeError("Compacted checkpoint still exceeds the context threshold")
 
     def _episodic_history(self) -> list[dict[str, Any]]:
-        return [message for message in self.messages if not self._is_compaction_message(message)]
+        return [
+            message
+            for message in self.messages
+            if message.get("role") != "system" and not self._is_checkpoint(message)
+        ]
 
     def _recent_user_messages(self) -> list[dict[str, Any]]:
         recent: list[dict[str, Any]] = []
@@ -451,12 +324,14 @@ class Agent:
             if message.get("role") != "user":
                 continue
             candidate = [message, *recent]
-            if recent and self._prompt_tokens(candidate, None) > self.recent_user_tokens:
+            if recent and self.runtime.prompt_tokens(candidate, None) > self.recent_user_tokens:
                 break
             recent = candidate
         return recent
 
-    def _runtime_instructions(self) -> str:
+    def _system_prompt(self) -> str:
+        if self.memory is None and self.experience is None and self.skills is None:
+            return SYSTEM_PROMPT
         return f"{SYSTEM_PROMPT}\n\n{self._canonical_state()}"
 
     def _canonical_state(self) -> str:
@@ -477,56 +352,16 @@ class Agent:
         if self.experience is not None:
             sections.append(
                 f"Searchable exact experience log: {self.experience.count()} events; "
-                "use search_history/read_history for old observations and tool results."
+                "use search_history/read_history for old observations."
             )
         if self.skills is not None:
             sections.append(self.skills.prompt_catalog())
         return "\n".join(sections)
 
     @staticmethod
-    def _is_compaction_message(message: dict[str, Any]) -> bool:
+    def _is_checkpoint(message: dict[str, Any]) -> bool:
         content = message.get("content")
-        return isinstance(content, str) and content.startswith(
-            (CANONICAL_PREFIX, CHECKPOINT_PREFIX)
-        )
-
-    def _prompt_tokens(
-        self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None
-    ) -> int:
-        if self.processor is None:
-            raise RuntimeError("Chat Completions runtime requires the served model's processor")
-        try:
-            processor_messages = []
-            for message in messages:
-                calls = []
-                for call in message.get("tool_calls") or []:
-                    function = call.get("function") or {}
-                    arguments = function.get("arguments", {})
-                    if isinstance(arguments, str):
-                        try:
-                            arguments = json.loads(arguments)
-                        except json.JSONDecodeError:
-                            arguments = {}
-                    if not isinstance(arguments, dict):
-                        arguments = {}
-                    calls.append(call | {"function": function | {"arguments": arguments}})
-                processor_messages.append(message | ({"tool_calls": calls} if calls else {}))
-            encoded = self.processor.apply_chat_template(
-                processor_messages,
-                tools=tools,
-                add_generation_prompt=True,
-                tokenize=True,
-                return_dict=True,
-                return_tensors=None,
-            )
-            input_ids = encoded["input_ids"]
-            if input_ids and isinstance(input_ids[0], list):
-                input_ids = input_ids[0]
-            return len(input_ids)
-        except Exception as error:
-            raise RuntimeError(
-                "Exact prompt token accounting failed; load the processor for the served model revision"
-            ) from error
+        return isinstance(content, str) and content.startswith(CHECKPOINT_PREFIX)
 
     def _result(self, status: str, answer: str, steps: int, started: float) -> RunResult:
         return RunResult(
@@ -545,9 +380,9 @@ class Agent:
             return
         self.trajectory_path.parent.mkdir(parents=True, exist_ok=True)
         record = {
-            "model": self.model,
+            "model": self.runtime.model_id,
             "task": self.original_task,
-            "runtime": "responses_continuous" if self.runtime is not None else "chat_completions",
+            "runtime": "local_mlx",
             "result": asdict(result),
             "messages": self._trajectory_messages(),
         }

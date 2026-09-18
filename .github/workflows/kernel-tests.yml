@@ -2,7 +2,7 @@ name: kernel-tests
 
 on:
   push:
-    branches: [self-evolving-kernel]
+    branches: [master]
   pull_request:
 
 jobs:
@@ -15,38 +15,21 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install lightweight runtime/test dependencies
+      - name: Install portable test dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.6"
-          python -m pip install "openai>=3.8" "pillow>=10" "pyyaml>=6" "rich>=13" "pytest>=8"
-      - name: Check clean teaching layout
+          python -m pip install "pillow>=10" "pyyaml>=6" "rich>=13" "pytest>=8"
+      - name: Check local-only layout
         run: |
-          test ! -e attempt_1
-          test ! -e attempt_2
-          test ! -e requirements.txt
-          test ! -e config.yaml
-          test ! -e todo.md
-          test -e configs/lamgate.yaml
-          test -e scripts/run.py
-          test -e scripts/train.py
-          test -e practice/implementation/kernel/agent.py
-          test -e practice/signatures/kernel/agent.py
-      - name: Compile reference and practice harnesses
-        run: python -m compileall -q agent_ground_up scripts infra practice
-      - name: Run focused kernel tests
-        run: |
-          pytest -q \
-            tests/test_tools.py \
-            tests/test_agent.py \
-            tests/test_agent_memory.py \
-            tests/test_agent_continuous.py \
-            tests/test_memory.py \
-            tests/test_experience.py \
-            tests/test_skills.py \
-            tests/test_loss.py \
-            tests/test_tasks.py \
-            tests/test_evaluate.py \
-            tests/test_archive.py \
-            tests/test_improve.py \
-            tests/test_runtime.py
+          test -e configs/local.yaml
+          test -e agent_ground_up/bonsai.py
+          test -e agent_ground_up/runtime.py
+          test ! -e configs/lamgate.yaml
+          test ! -e configs/astra.yaml
+          test ! -e agent_ground_up/factory.py
+          test ! -e agent_ground_up/remote_env.py
+          test ! -e infra
+      - name: Compile
+        run: python -m compileall -q agent_ground_up scripts practice
+      - name: Run portable tests
+        run: pytest -q tests

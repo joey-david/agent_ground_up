@@ -11,7 +11,6 @@ from rich.text import Text
 
 
 def crop_middle(text: str, max_lines: int) -> str:
-    """Keep the beginning and end of a long string, removing its middle."""
     lines = text.splitlines()
     if len(lines) <= max_lines:
         return text
@@ -25,21 +24,36 @@ def crop_middle(text: str, max_lines: int) -> str:
 
 
 class TUI:
-    """Render agent turns and tool activity to a terminal."""
+    """Terminal UI. Model text is written as soon as mlx-vlm yields it."""
 
     def __init__(self, max_lines: int = 40, console: Console | None = None) -> None:
         self.max_lines = max_lines
         self.console = console or Console(highlight=False)
+        self._streaming = False
 
     def user(self, text: str) -> None:
-        """Render a Markdown user turn."""
         self._show("User", text, "green", markdown=True)
 
+    def begin_assistant(self, title: str = "Agent") -> None:
+        self.console.print(Rule(f"[bold magenta]{title}[/]"))
+        self._streaming = True
+
+    def token(self, text: str) -> None:
+        self.console.print(Text(text), end="", soft_wrap=True)
+
+    def end_assistant(self, message: dict[str, Any]) -> None:
+        if self._streaming:
+            self.console.print()
+            self._streaming = False
+        self._tool_calls(message)
+
     def assistant(self, message: dict[str, Any], title: str = "Agent") -> None:
-        """Render an assistant turn and each tool call it requested."""
         self.console.print(Rule(f"[bold magenta]{title}[/]"))
         if content := message.get("content"):
             self.console.print(Markdown(crop_middle(content, self.max_lines)))
+        self._tool_calls(message)
+
+    def _tool_calls(self, message: dict[str, Any]) -> None:
         for call in message.get("tool_calls", []):
             function = call["function"]
             raw_arguments = function["arguments"]
@@ -58,15 +72,12 @@ class TUI:
             )
 
     def tool(self, name: str, text: str) -> None:
-        """Render a tool observation, highlighting unified diffs when present."""
         is_diff = any(
             line.startswith(("diff --git", "@@ ", "+++ ", "--- ")) for line in text.splitlines()
         )
-        language = "diff" if is_diff else None
-        self._show(f"Tool · {name}", text, "cyan", language=language)
+        self._show(f"Tool · {name}", text, "cyan", language="diff" if is_diff else None)
 
     def status(self, text: str) -> None:
-        """Render the final run status."""
         self.console.print(f"[dim]{text}[/]")
 
     def _show(
@@ -78,7 +89,6 @@ class TUI:
         markdown: bool = False,
         language: str | None = None,
     ) -> None:
-        """Render one capped string through the requested Rich formatter."""
         self.console.print(Rule(f"[bold {color}]{title}[/]"))
         text = crop_middle(text, self.max_lines)
         if markdown:

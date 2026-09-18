@@ -1,0 +1,36 @@
+model:
+  id: prism-ml/Ternary-Bonsai-2-27B-mlx-2bit
+  adapter:
+  context_window: 32768
+  temperature: 1.0
+  top_p: 0.95
+  top_k: 20
+
+agent:
+  workdir: .
+  trajectory: runs/latest.json
+  compact_at: 0.90
+  recent_user_tokens: 12000
+  max_output_tokens: 4096
+  max_tool_output_tokens: 4096
+  max_steps: 128
+  wall_time_s: 3600
+  memory_dir: state/memory
+  experience_dir: state/experience
+  wake_records: 6
+  memory_leaf_size: 8
+  memory_summary_chars: 500
+  skills_dir: skills
+
+ui:
+  max_lines: 40
+
+training:
+  data: data/sft.jsonl
+  output: outputs/bonsai-lora
+  learning_rate: 0.00002
+  steps: 100
+  report_every: 10
+  rank: 8
+  alpha: 16
+  max_seq_length: 512
